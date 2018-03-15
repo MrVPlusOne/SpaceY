@@ -4,7 +4,6 @@ import spaceY.Geometry2D.Vec2
 
 
 case class State(pos: Vec2, velocity: Vec2, rotation: Double, goalX: Double, fuelLeft: Double) {
-
 }
 
 case class Action(rotationSpeed: Double, thrust: Double)
@@ -53,7 +52,8 @@ object Simulator{
 
     if(state.pos.y <= 0){
       if(math.abs(state.rotation) < rotationTolerance && state.velocity.magnitude < hitSpeedTolerance){
-        return Some(Landed(state.goalX, state.pos.x, state.fuelLeft))
+        val score = (1.0 - 0.5 * state.rotation / rotationTolerance) * (1.0 - 0.5 * state.velocity.magnitude / hitSpeedTolerance)
+        return Some(Landed(state, score))
       }else{
         return Some(Crashed("landing failed"))
       }
@@ -65,5 +65,5 @@ object Simulator{
 
 
 sealed trait SimulationEnding
-case class Landed(goalX: Double, posX: Double, fuelLeft: Double) extends SimulationEnding
+case class Landed(state: State, landingScore: Double) extends SimulationEnding
 case class Crashed(info: String) extends SimulationEnding
