@@ -1,6 +1,7 @@
 package spaceY
 
 import spaceY.Geometry2D.Vec2
+import spaceY.Simulator.FullSimulation
 
 
 case class State(pos: Vec2, velocity: Vec2, rotation: Double, goalX: Double, fuelLeft: Double) {
@@ -29,7 +30,7 @@ case class Simulator(initState: State, world: World, terminateFunc: State => Opt
     }
   }
 
-  def simulateUntilResult(policy: State => Action): (Seq[(State,Action)], SimulationEnding) = {
+  def simulateUntilResult(policy: State => Action): FullSimulation = {
     var ending: SimulationEnding = null
     val steps = simulate(policy).takeWhile{ case (s, a) =>
       terminateFunc(s) match {
@@ -38,24 +39,26 @@ case class Simulator(initState: State, world: World, terminateFunc: State => Opt
           ending = end
           false
       }
-    }.toList
-    (steps, ending)
+    }.toIndexedSeq
+    FullSimulation(steps, ending)
   }
 }
 
 object Simulator{
   case class WorldBound(width: Double, height: Double)
 
+  case class FullSimulation(trace: IS[(State,Action)], ending: SimulationEnding)
+
   def standardTerminateFunc(bound: WorldBound, hitSpeedTolerance: Double, rotationTolerance: Double)(state: State): Option[SimulationEnding] = {
-    if(state.fuelLeft < 0) return Some(Crashed("out of fuel"))
-    if(math.abs(state.pos.x) > bound.width/2 || state.pos.y > bound.height) return Some(Crashed("out of bound"))
+    if(state.fuelLeft < 0) return Some(Crashed(state, "out of fuel"))
+    if(math.abs(state.pos.x) > bound.width/2 || state.pos.y > bound.height) return Some(Crashed(state, "out of bound"))
 
     if(state.pos.y <= 0){
       if(math.abs(state.rotation) < rotationTolerance && state.velocity.magnitude < hitSpeedTolerance){
         val score = (1.0 - 0.5 * state.rotation / rotationTolerance) * (1.0 - 0.5 * state.velocity.magnitude / hitSpeedTolerance)
         return Some(Landed(state, score))
       }else{
-        return Some(Crashed("landing failed"))
+        return Some(Crashed(state, "landing failed"))
       }
     }
     None
@@ -66,4 +69,4 @@ object Simulator{
 
 sealed trait SimulationEnding
 case class Landed(state: State, landingScore: Double) extends SimulationEnding
-case class Crashed(info: String) extends SimulationEnding
+case class Crashed(state: State, info: String) extends SimulationEnding

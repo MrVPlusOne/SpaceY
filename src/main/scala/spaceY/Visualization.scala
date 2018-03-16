@@ -2,15 +2,15 @@ package spaceY
 
 import java.awt._
 import java.awt.geom.{GeneralPath, Line2D}
-import javax.swing.{JComponent, JFrame, JPanel}
+import javax.swing._
 
 import rx._
 import spaceY.Geometry2D._
-import spaceY.Simulator.WorldBound
+import spaceY.Simulator.{FullSimulation, WorldBound}
 
 case class Visualization(worldBound: WorldBound, state: State, action: Action) {
   val borderThickness = 5
-  val rocketHeight = worldBound.height / 15
+  val rocketHeight = worldBound.height / 12
   val rocketHalfWidth = rocketHeight/6
 
   def draw(g2D: Graphics2D, boxW: Double, boxH: Double): Unit = {
@@ -95,6 +95,68 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
 
   visual.trigger{
     jPanel.repaint()
+  }
+}
+
+class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulation],
+                            initSimulation: Int, initStep: Int)(implicit ctx: Ctx.Owner){
+  val sliderSize = new Dimension(200,20)
+
+  private var simulation = initSimulation
+  private var step = initStep
+
+  def mkVisual() = {
+    val (s, a) = simulations(simulation).trace(step)
+    Visualization(worldBound, s, a)
+  }
+
+  val visual = Var {
+    mkVisual()
+  }
+
+  val simulationSelector: JSlider = new JSlider(0, simulations.length-1, simulation){
+    setPreferredSize(sliderSize)
+    setMajorTickSpacing(1)
+    addChangeListener{_ =>
+      simulation = getValue
+      resetStepSelector(simulation)
+    }
+  }
+  val stepSelector: JSlider = new JSlider(0, 1, initSimulation){
+    setPreferredSize(sliderSize)
+    setMajorTickSpacing(1)
+  }
+  resetStepSelector(step)
+
+  def resetStepSelector(simulation: Int): Unit ={
+    stepSelector.setMaximum(simulations(simulation).trace.length-1)
+    stepSelector.setValue(0)
+  }
+  stepSelector.addChangeListener{_ =>
+    step = stepSelector.getValue
+    visual() = mkVisual()
+  }
+
+  val statePanel = new StatePanel(visual)
+
+  import GUI._
+
+
+  val jPanel: JPanel = {
+    val labelDim = new JLabel("1234").getPreferredSize()
+
+    panel(horizontal = false)(
+      statePanel.jPanel,
+      panel(horizontal = true)(
+        panel(horizontal = true)(
+          new JLabel("simulation: "),
+          sliderLabel(labelDim, simulationSelector),
+          simulationSelector),
+        panel(horizontal = true)(
+          new JLabel("step: "),
+          sliderLabel(labelDim, stepSelector) , stepSelector)
+      )
+    )
   }
 }
 
