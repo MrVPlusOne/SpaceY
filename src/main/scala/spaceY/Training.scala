@@ -18,7 +18,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import NetworkModel._
-import javax.swing.JFrame
+import javax.swing.{JButton, JFrame, JPanel}
 import rx.{Rx, Var}
 
 object NetworkModel{
@@ -185,33 +185,46 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
     val evaluations = Var(IS[FullSimulation]())
 
+    val placeholder = GUI.panel(horizontal = false)()
+    val dataButton = new JButton("Fetch data")
     val frame = new JFrame()
+    frame.setContentPane(
+      GUI.panel(horizontal = false)(
+        placeholder,
+        GUI.panel(horizontal = true)(dataButton, GUI.panel(horizontal = false)())
+      )
+    )
     var oldSCPanel: Option[StateWithControlPanel] = None
 
-      val scPanel = Rx {
-        if(evaluations().isEmpty) None
-        else {
-          oldSCPanel match {
-            case None =>
-              Some(new StateWithControlPanel(worldBound, evaluations(), 0, 0))
-            case Some(p) =>
-              Some(new StateWithControlPanel(worldBound, evaluations(), p.simulation, p.step))
-          }
-        }
+    def replaceUI(): Unit ={
+      val newP = oldSCPanel match{
+        case None =>
+          new StateWithControlPanel(worldBound, evaluations.now, 0, 0)
+        case Some(op) =>
+          val np = new StateWithControlPanel(worldBound, evaluations.now, op.simulation, op.step)
+          np.jPanel.setPreferredSize(op.jPanel.getSize)
+          op.stopTracking()
+          np
       }
 
-      scPanel.foreach { pOpt =>
-        pOpt.foreach { p =>
-          oldSCPanel.foreach { op =>
-            p.jPanel.setPreferredSize(op.jPanel.getSize)
-          }
-          frame.setContentPane(p.jPanel)
-          frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
-          frame.pack()
-          frame.setVisible(true)
-          oldSCPanel = Some(p)
-        }
+      placeholder.removeAll()
+      placeholder.add(newP.jPanel)
+      frame.pack()
+
+      oldSCPanel = Some(newP)
+    }
+
+    evaluations.triggerLater{
+      if(oldSCPanel.isEmpty){
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+        frame.setVisible(true)
+        replaceUI()
       }
+    }
+
+    dataButton.addActionListener(_ => {
+      replaceUI()
+    })
 
 
     for(epoch <- 0 until maxIter){

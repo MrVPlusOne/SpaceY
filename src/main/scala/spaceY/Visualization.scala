@@ -105,9 +105,11 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
     }
   }
 
-  visual.trigger{
+  private val repaintObs = visual.trigger{
     jPanel.repaint()
   }
+
+  def stopTracking(): Unit = repaintObs.kill()
 }
 
 class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulation],
@@ -176,6 +178,8 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
       )
     )
   }
+
+  def stopTracking(): Unit = statePanel.stopTracking()
 }
 
 object TestVisual{
