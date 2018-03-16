@@ -10,7 +10,6 @@ import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.lossfunctions.LossFunctions
 import spaceY.Simulator.{FullSimulation, NoInfo, PolicyInfo, RPolicy}
-//import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.factory.Nd4j
 import spaceY.Geometry2D.Vec2
 import spaceY.Simulator.WorldBound
@@ -19,6 +18,8 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import NetworkModel._
+import javax.swing.JFrame
+import rx.{Rx, Var}
 
 object NetworkModel{
   val stateLen = 7
@@ -96,6 +97,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft, action.rotationSpeed, action.thrust)
   }
 
+  @inline
   def actionToDoubles(action: Action): Array[Double] = {
     Array(action.rotationSpeed, action.thrust)
   }
@@ -138,10 +140,14 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       val toCollect = sampleNum - nOb
       val collected = trace.reverse.take(toCollect)
       val last = stateToDoubles(collected.head._1) ++ actionToDoubles(collected.head._2._1)
-      observations += Observation(last , Reward.endingReward(ending))
-      observations ++= collected.tail.map{
-        case (s, a) => Observation(stateToDoubles(s) ++ actionToDoubles(a._1), reward = 0)
+      observations += Observation(last, None, Reward.endingReward(ending))
+
+      for(i <- 1 until collected.length){
+        val (s1, _) = collected(i-1)
+        val (s0, (a0, _)) = collected(i)
+        observations += Observation(stateActionArray(s0, a0), Some(stateToDoubles(s1)), 0)
       }
+
       nOb += collected.length
       runs += 1
     }
@@ -150,13 +156,15 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     observations
   }
 
-  case class Observation(tensor: Array[Double], reward: Double){
+  case class Observation(tensor: Array[Double], newState: Option[Array[Double]], reward: Double){
     override def toString: String = tensor.mkString("["," ,","]") + s" -> $reward"
   }
 
   case class TrainingState()
 
   def train(maxIter: Int, netReplaceRate: Double, exploreRateFunc: Int => Double) = {
+    import rx.Ctx.Owner.Unsafe._
+
     def initPolicy(state: State): (Action, PolicyInfo) = {
       val thrust = world.gravity.magnitude / world.maxThrust - 0.1 * rand.nextDouble()
       Action(rotationSpeed = 0.0 , thrust) -> NoInfo
@@ -174,6 +182,38 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
     val newNet = createModel(seed)
     val oldNet = newNet.clone()
+
+    val evaluations = Var(IS[FullSimulation]())
+
+    val frame = new JFrame()
+    var oldSCPanel: Option[StateWithControlPanel] = None
+
+      val scPanel = Rx {
+        if(evaluations().isEmpty) None
+        else {
+          oldSCPanel match {
+            case None =>
+              Some(new StateWithControlPanel(worldBound, evaluations(), 0, 0))
+            case Some(p) =>
+              Some(new StateWithControlPanel(worldBound, evaluations(), p.simulation, p.step))
+          }
+        }
+      }
+
+      scPanel.foreach { pOpt =>
+        pOpt.foreach { p =>
+          oldSCPanel.foreach { op =>
+            p.jPanel.setPreferredSize(op.jPanel.getSize)
+          }
+          frame.setContentPane(p.jPanel)
+          frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+          frame.pack()
+          frame.setVisible(true)
+          oldSCPanel = Some(p)
+        }
+      }
+
+
     for(epoch <- 0 until maxIter){
       println(s"Epoch $epoch starts")
 
@@ -205,11 +245,11 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       println()
 
 
-
       val policy = networkToPolicy(newNet, exploreRate = None) _
-      val FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+      val sim@FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
       println(s"Test Ending: $ending")
       println(s"Test Reward: ${Reward.endingReward(ending)}")
+      evaluations() = evaluations.now :+ sim
     }
 
   }
@@ -227,20 +267,14 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
   }
 
 
-  def valueEstimation(oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork, tensor: Array[Double]): Double = {
-    val (bestA, _) = availableActions.map{ a =>
-      val t = tensor.clone()
-      t(stateLen) = a.rotationSpeed
-      t(stateLen+1) = a.thrust
-      val input = Nd4j.create(t)
-      a -> newNet.output(input, false).getDouble(0)
-    }.maxBy(_._2)
+  def valueEstimation(oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork, state: Array[Double]): Double = {
 
-    val t = tensor.clone()
-    t(stateLen) = bestA.rotationSpeed
-    t(stateLen+1) = bestA.thrust
-    val input = Nd4j.create(t)
-    oldNet.output(input, false).getDouble(0)
+    val inputs = Nd4j.create(availableActions.toArray.map { a =>
+      state ++ actionToDoubles(a)
+    })
+
+    val actionId = SimpleMath.maxId(newNet.output(inputs, false).data().asDouble())
+    oldNet.output(inputs.getRow(actionId), false).getDouble(0)
   }
 
   def getBatch(obs: mutable.Queue[Observation], oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork, batchSize: Int): (INDArray, INDArray) = {
@@ -249,8 +283,11 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       obs(i)
     }
     val inputs = toUse.map(_.tensor)
-    val outputs = toUse.map{ ob =>
-      Array(ob.reward + gamma * valueEstimation(oldNet, newNet, ob.tensor))
+    val outputs = toUse.map { ob =>
+      Array(ob.newState match {
+        case None => ob.reward
+        case Some(newS) => ob.reward + gamma * valueEstimation(oldNet, newNet, newS)
+      })
     }
     (Nd4j.create(inputs), Nd4j.create(outputs))
   }

@@ -17,9 +17,6 @@ object Playground {
   val world = World(gravity = Vec2.down*10, maxThrust = 30, deltaT = deltaT)
 
   def main(args: Array[String]): Unit = {
-    testUI(args)
-    return
-
 //    BasicConfigurator.configure()
 
     val bound = WorldBound(width = 200, height = 150)

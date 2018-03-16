@@ -111,11 +111,9 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
 }
 
 class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulation],
-                            initSimulation: Int, initStep: Int)(implicit ctx: Ctx.Owner){
+                            var simulation: Int, var step: Int)(implicit ctx: Ctx.Owner){
   val sliderSize = new Dimension(200,20)
 
-  private var simulation = initSimulation
-  private var step = initStep
 
   def mkVisual() = {
     val (s, a) = simulations(simulation).trace(step)
@@ -141,11 +139,11 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
       resetStepSelector(simulation)
     }
   }
-  val stepSelector: JSlider = new JSlider(0, 1, initSimulation){
+  val stepSelector: JSlider = new JSlider(0, simulations(simulation).trace.length-1, step){
     setPreferredSize(sliderSize)
     setMajorTickSpacing(1)
   }
-  resetStepSelector(step)
+
 
   def resetStepSelector(simulation: Int): Unit ={
     stepSelector.setMaximum(simulations(simulation).trace.length-1)

@@ -250,6 +250,10 @@ object SimpleMath {
     1 - resSquared / variance
   }
 
+  def maxId(xs: IS[Double]): Int = {
+    xs.zipWithIndex.maxBy(_._1)._2
+  }
+
   //  /** use exponentially weighted moving variance to calculate rSquared
   //    * @param alpha: change rate */
   //  def eRSquared(ys: IS[Double], predictions: IS[Double], weights: IS[Double], alpha: Double): Double = {
