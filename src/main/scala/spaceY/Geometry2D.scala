@@ -17,6 +17,10 @@ object Geometry2D {
       val s = math.sin(angle)
       Vec2(x * c - s * y, y * c + s * x)
     }
+
+    override def toString: String = {
+      "(%.2f, %.2f)".format(x,y)
+    }
   }
 
   object Vec2 {

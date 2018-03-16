@@ -44,7 +44,8 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action, i
 
     def drawInfo() = {
       g2D.setColor(Color.green.darker())
-      g2D.drawString(info.displayInfo, 20+borderThickness,20+borderThickness)
+      g2D.drawString(info.displayInfo, 30+borderThickness,20+borderThickness)
+      g2D.drawString(action.toString, 30+borderThickness, 40+borderThickness)
     }
 
     def drawGoal() = {
@@ -125,11 +126,18 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
     mkVisual()
   }
 
+  val resultArea = new JLabel()
+  def setResult(): Unit ={
+    resultArea.setText(simulations(simulation).ending.toString)
+  }
+  setResult()
+
   val simulationSelector: JSlider = new JSlider(0, simulations.length-1, simulation){
     setPreferredSize(sliderSize)
     setMajorTickSpacing(1)
     addChangeListener{_ =>
       simulation = getValue
+      setResult()
       resetStepSelector(simulation)
     }
   }
@@ -158,7 +166,7 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
 
     panel(horizontal = false)(
       statePanel.jPanel,
-
+      resultArea,
       panel(horizontal = true)(
         panel(horizontal = true)(
           new JLabel("simulation: "),

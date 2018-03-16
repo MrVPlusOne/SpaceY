@@ -5,9 +5,16 @@ import spaceY.Simulator.{FullSimulation, RPolicy, PolicyInfo}
 
 
 case class State(pos: Vec2, velocity: Vec2, rotation: Double, goalX: Double, fuelLeft: Double) {
+  override def toString: String = {
+    s"State(F: %.1f, P: $pos, V: $velocity, R: %.2f, G: %.1f)".format(fuelLeft, rotation, goalX)
+  }
 }
 
-case class Action(rotationSpeed: Double, thrust: Double)
+case class Action(rotationSpeed: Double, thrust: Double){
+  override def toString: String = {
+    "Action(RSpeed: % .2f, Thrust: % .2f)".format(rotationSpeed, thrust)
+  }
+}
 
 case class World(gravity: Vec2, maxThrust: Double, deltaT: Double){
 
