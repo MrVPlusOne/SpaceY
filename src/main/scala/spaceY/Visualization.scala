@@ -2,13 +2,13 @@ package spaceY
 
 import java.awt._
 import java.awt.geom.{GeneralPath, Line2D}
-import javax.swing._
 
+import javax.swing._
 import rx._
 import spaceY.Geometry2D._
-import spaceY.Simulator.{FullSimulation, WorldBound}
+import spaceY.Simulator.{FullSimulation, NoInfo, PolicyInfo, WorldBound}
 
-case class Visualization(worldBound: WorldBound, state: State, action: Action) {
+case class Visualization(worldBound: WorldBound, state: State, action: Action, info: PolicyInfo) {
   val borderThickness = 5
   val rocketHeight = worldBound.height / 12
   val rocketHalfWidth = rocketHeight/6
@@ -42,44 +42,53 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action) {
     val w = worldBound.width
     val h = worldBound.height
 
+    def drawInfo() = {
+      g2D.setColor(Color.green.darker())
+      g2D.drawString(info.displayInfo, 20+borderThickness,20+borderThickness)
+    }
 
-    //draw goal
-    g2D.setStroke(new BasicStroke(borderThickness, BasicStroke.CAP_BUTT,
-      BasicStroke.JOIN_MITER, 10f, Array(10f), 0f))
-    g2D.setColor(Color.green.brighter())
-    val goalLine = Line2(Vec2(state.goalX, h), Vec2(state.goalX, 0))
-    drawLine(goalLine)
+    def drawGoal() = {
+      g2D.setStroke(new BasicStroke(borderThickness, BasicStroke.CAP_BUTT,
+        BasicStroke.JOIN_MITER, 10f, Array(10f), 0f))
+      g2D.setColor(Color.green.brighter())
+      val goalLine = Line2(Vec2(state.goalX, h), Vec2(state.goalX, 0))
+      drawLine(goalLine)
+    }
+
+    def drawBorder() = {
+      g2D.setStroke(new BasicStroke(borderThickness))
+      val groundLine = Line2(Vec2(-w / 2, 0), Vec2(w / 2, 0))
+      val leftLine = Line2(Vec2(-w / 2, h), Vec2(-w / 2, 0))
+      val rightLine = Line2(Vec2(w / 2, h), Vec2(w / 2, 0))
+      val topLine = Line2(Vec2(-w / 2, h), Vec2(w / 2, h))
+      g2D.setColor(Color.red)
+      drawLine(leftLine)
+      drawLine(rightLine)
+      drawLine(topLine)
+      g2D.setColor(Color.black)
+      drawLine(groundLine)
+    }
+    def drawRocket() = {
+      g2D.setPaint(Color.red)
+      val bottom = state.pos - Vec2.up.rotate(state.rotation) * (rocketHeight / 3)
+      val flareScale = action.thrust
+      val flareLeft = bottom + Vec2.left.rotate(state.rotation) * (rocketHalfWidth * 0.6 * flareScale)
+      val flareRight = bottom + Vec2.right.rotate(state.rotation) * (rocketHalfWidth * 0.6 * flareScale)
+      val flareBottom = bottom + Vec2.down.rotate(state.rotation) * (rocketHeight * 0.8 * flareScale)
+      g2D.fill(makeClosePath(Seq(flareLeft, flareBottom, flareRight)))
+      //draw rocket
+      g2D.setPaint(Color.blue)
+      val tip = bottom + Vec2.up.rotate(state.rotation) * rocketHeight
+      val rocketLeft = bottom + Vec2.left.rotate(state.rotation) * rocketHalfWidth
+      val rocketRight = bottom + Vec2.right.rotate(state.rotation) * rocketHalfWidth
+      g2D.fill(makeClosePath(Seq(tip, rocketLeft, rocketRight)))
+    }
 
 
-    //draw border
-    g2D.setStroke(new BasicStroke(borderThickness))
-    val groundLine = Line2(Vec2(-w / 2, 0), Vec2(w / 2, 0))
-    val leftLine = Line2(Vec2(-w / 2, h), Vec2(-w / 2, 0))
-    val rightLine = Line2(Vec2(w / 2, h), Vec2(w / 2, 0))
-    val topLine = Line2(Vec2(-w / 2, h), Vec2(w / 2, h))
-    g2D.setColor(Color.red)
-    drawLine(leftLine)
-    drawLine(rightLine)
-    drawLine(topLine)
-    g2D.setColor(Color.black)
-    drawLine(groundLine)
-
-    //draw flare
-    g2D.setPaint(Color.red)
-    val bottom = state.pos - Vec2.up.rotate(state.rotation) * (rocketHeight / 3)
-    val flareScale = action.thrust
-    val flareLeft = bottom + Vec2.left.rotate(state.rotation) * (rocketHalfWidth * 0.6 * flareScale)
-    val flareRight = bottom + Vec2.right.rotate(state.rotation) * (rocketHalfWidth * 0.6 * flareScale)
-    val flareBottom = bottom + Vec2.down.rotate(state.rotation) * (rocketHeight * 0.8 * flareScale)
-    g2D.fill(makeClosePath(Seq(flareLeft, flareBottom, flareRight)))
-
-
-    //draw rocket
-    g2D.setPaint(Color.blue)
-    val tip = bottom + Vec2.up.rotate(state.rotation) * rocketHeight
-    val rocketLeft = bottom + Vec2.left.rotate(state.rotation) * rocketHalfWidth
-    val rocketRight = bottom + Vec2.right.rotate(state.rotation) * rocketHalfWidth
-    g2D.fill(makeClosePath(Seq(tip, rocketLeft, rocketRight)))
+    drawGoal()
+    drawBorder()
+    drawRocket()
+    drawInfo()
   }
 }
 
@@ -88,7 +97,9 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
 
   val jPanel: JPanel = new JPanel(){
     override def paintComponent(g: Graphics): Unit = {
-      g.asInstanceOf[Graphics2D].translate(margin, margin)
+      val g2D = g.asInstanceOf[Graphics2D]
+      g2D.translate(margin, margin)
+      g2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
       visual.now.draw(g.asInstanceOf[Graphics2D], getWidth - 2*margin, getHeight - 2*margin)
     }
   }
@@ -107,7 +118,7 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
 
   def mkVisual() = {
     val (s, a) = simulations(simulation).trace(step)
-    Visualization(worldBound, s, a)
+    Visualization(worldBound, s, a._1, a._2)
   }
 
   val visual = Var {
@@ -143,10 +154,11 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
 
 
   val jPanel: JPanel = {
-    val labelDim = new JLabel("1234").getPreferredSize()
+    val labelDim = new JLabel("1234").getPreferredSize
 
     panel(horizontal = false)(
       statePanel.jPanel,
+
       panel(horizontal = true)(
         panel(horizontal = true)(
           new JLabel("simulation: "),
@@ -165,7 +177,7 @@ object TestVisual{
     Rx.unsafe {
       val visual = Var {
         val s = State(Vec2(1.3, 1), Vec2.zero, math.Pi * 0.2, goalX = 0.5, fuelLeft = 3)
-        Visualization(WorldBound(width = 600, height = 500), s, Action(0,0))
+        Visualization(WorldBound(width = 600, height = 500), s, Action(0,0), NoInfo)
       }
 
       val statePanel = new StatePanel(visual)

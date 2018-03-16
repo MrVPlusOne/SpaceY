@@ -1,13 +1,13 @@
 package spaceY
 
 import java.awt.Dimension
-import javax.swing.JFrame
 
+import javax.swing.JFrame
 import org.apache.log4j.BasicConfigurator
 import org.nd4j.linalg.factory.Nd4j
 import rx._
 import spaceY.Geometry2D._
-import spaceY.Simulator.{FullSimulation, WorldBound}
+import spaceY.Simulator.{FullSimulation, NoInfo, PolicyInfo, WorldBound}
 
 import scala.util.Random
 
@@ -41,8 +41,8 @@ object Playground {
     }
 
     val rand = new Random(1)
-    def randomPolicy(state: State): Action = {
-      Action(rotationSpeed = (2*rand.nextDouble()-1) * math.Pi, thrust = rand.nextDouble())
+    def randomPolicy(state: State): (Action, PolicyInfo) = {
+      Action(rotationSpeed = (2*rand.nextDouble()-1) * math.Pi, thrust = rand.nextDouble()) -> NoInfo
     }
 
     val simResult = Simulator(initState,

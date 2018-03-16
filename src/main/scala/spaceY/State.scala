@@ -1,7 +1,7 @@
 package spaceY
 
 import spaceY.Geometry2D.Vec2
-import spaceY.Simulator.FullSimulation
+import spaceY.Simulator.{FullSimulation, RPolicy, PolicyInfo}
 
 
 case class State(pos: Vec2, velocity: Vec2, rotation: Double, goalX: Double, fuelLeft: Double) {
@@ -23,16 +23,16 @@ case class World(gravity: Vec2, maxThrust: Double, deltaT: Double){
 }
 
 case class Simulator(initState: State, world: World, terminateFunc: State => Option[SimulationEnding]){
-  def simulate(policy: State => Action): Iterator[(State,Action)] = {
+  def simulate(policy: RPolicy): Iterator[(State,(Action,PolicyInfo))] = {
     Iterator.iterate(initState -> policy(initState)){ case (s,_) =>
-      val a1 = policy(s)
-      world.update(s, a1) -> a1
+      val (a1, info) = policy(s)
+      (world.update(s, a1), (a1, info))
     }
   }
 
-  def simulateUntilResult(policy: State => Action): FullSimulation = {
+  def simulateUntilResult(policy: RPolicy): FullSimulation = {
     var ending: SimulationEnding = null
-    val steps = simulate(policy).takeWhile{ case (s, a) =>
+    val steps = simulate(policy).takeWhile{ case (s, _) =>
       terminateFunc(s) match {
         case None => true
         case Some(end) =>
@@ -45,9 +45,20 @@ case class Simulator(initState: State, world: World, terminateFunc: State => Opt
 }
 
 object Simulator{
+
+  type RPolicy = State => (Action, PolicyInfo)
+
+  trait PolicyInfo{
+    def displayInfo: String
+  }
+
+  case object NoInfo extends PolicyInfo{
+    def displayInfo: String = "No Info"
+  }
+
   case class WorldBound(width: Double, height: Double)
 
-  case class FullSimulation(trace: IS[(State,Action)], ending: SimulationEnding)
+  case class FullSimulation(trace: IS[(State, (Action, PolicyInfo))], ending: SimulationEnding)
 
   def standardTerminateFunc(bound: WorldBound, hitSpeedTolerance: Double, rotationTolerance: Double)(state: State): Option[SimulationEnding] = {
     if(state.fuelLeft < 0) return Some(Crashed(state, "out of fuel"))

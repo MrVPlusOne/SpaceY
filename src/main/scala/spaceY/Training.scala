@@ -9,7 +9,7 @@ import org.nd4j.linalg.activations.Activation
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.lossfunctions.LossFunctions
-import spaceY.Simulator.FullSimulation
+import spaceY.Simulator.{FullSimulation, NoInfo, PolicyInfo, RPolicy}
 //import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.factory.Nd4j
 import spaceY.Geometry2D.Vec2
@@ -18,6 +18,57 @@ import spaceY.Simulator.WorldBound
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
+import NetworkModel._
+
+object NetworkModel{
+  val stateLen = 7
+  val actionLen = 2
+  val observationLen: Int = stateLen + actionLen
+
+  case class NetPolicyInfo(qValue: Double) extends PolicyInfo {
+    def displayInfo = s"Q Value: $qValue"
+  }
+
+  case object ExplorationInfo extends PolicyInfo{
+    def displayInfo = s"Random Exploration"
+  }
+
+  def createModel(seed: Int): MultiLayerNetwork = {
+    val numIter = 1
+    val learningRate = 0.0005
+    val sizes = IS(observationLen,128,64,32)
+
+    def newLayer(id: Int) = {
+      new DenseLayer.Builder()
+        .nIn(sizes(id))
+        .nOut(sizes(id+1))
+        .activation(Activation.RELU)
+        .weightInit(WeightInit.XAVIER).build()
+    }
+
+    val config = new NeuralNetConfiguration.Builder()
+      .seed(seed)
+      .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
+      .iterations(numIter)
+      .learningRate(learningRate)
+      .updater(Updater.ADAM)
+      .regularization(true).l2(1e-4)
+      .list()
+      .layer(0, newLayer(0))
+      .layer(1, newLayer(1))
+      .layer(2, newLayer(2))
+      .layer(3, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
+        .nIn(sizes.last).nOut(1)
+        .activation(Activation.RELU).build())
+      .pretrain(false).backprop(true)
+      .build()
+
+    val net = new MultiLayerNetwork(config)
+    net.init()
+    net
+  }
+
+}
 
 class Training(world: World, worldBound: WorldBound, initFuel: Double,
                initState: State, hitSpeedTolerance: Double, rotationTolerance: Double) {
@@ -25,9 +76,6 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
   val terminateFunc: State => Option[SimulationEnding] =
     Simulator.standardTerminateFunc(worldBound, hitSpeedTolerance, rotationTolerance)
 
-  val stateLen = 7
-  val actionLen = 2
-  val observationLen: Int = stateLen + actionLen
   val batchSize = 128
   val batchesPerDataCollect = 10
   val seed = 1
@@ -42,10 +90,10 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft)
   }
 
-  def stateActionTensor(state: State, action: Action): INDArray = {
+  def stateActionArray(state: State, action: Action): Array[Double] = {
     import state._
-    Nd4j.create(Array(pos.x, pos.y, velocity.x, velocity.y,
-      SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft, action.rotationSpeed, action.thrust))
+    Array(pos.x, pos.y, velocity.x, velocity.y,
+      SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft, action.rotationSpeed, action.thrust)
   }
 
   def actionToDoubles(action: Action): Array[Double] = {
@@ -67,7 +115,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     SimpleMath.linearInterpolate(range._1, range._2)(rand.nextDouble())
   }
 
-  def sampleObservations(policy: State => Action, sampleNum: Int, params: SamplingParams): ListBuffer[Observation] = {
+  def sampleObservations(policy: RPolicy, sampleNum: Int, params: SamplingParams): ListBuffer[Observation] = {
     import params._
 
     val observations = mutable.ListBuffer[Observation]()
@@ -89,10 +137,10 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       }
       val toCollect = sampleNum - nOb
       val collected = trace.reverse.take(toCollect)
-      val last = stateToDoubles(collected.head._1) ++ actionToDoubles(collected.head._2)
+      val last = stateToDoubles(collected.head._1) ++ actionToDoubles(collected.head._2._1)
       observations += Observation(last , Reward.endingReward(ending))
       observations ++= collected.tail.map{
-        case (s, a) => Observation(stateToDoubles(s) ++ actionToDoubles(a), reward = 0)
+        case (s, a) => Observation(stateToDoubles(s) ++ actionToDoubles(a._1), reward = 0)
       }
       nOb += collected.length
       runs += 1
@@ -109,9 +157,9 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
   case class TrainingState()
 
   def train(maxIter: Int, netReplaceRate: Double, exploreRateFunc: Int => Double) = {
-    def initPolicy(state: State): Action = {
+    def initPolicy(state: State): (Action, PolicyInfo) = {
       val thrust = world.gravity.magnitude / world.maxThrust - 0.1 * rand.nextDouble()
-      Action(rotationSpeed = 0.0 , thrust)
+      Action(rotationSpeed = 0.0 , thrust) -> NoInfo
     }
 
     println("sampling init observations")
@@ -124,7 +172,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     val replayBuffer = mutable.Queue[Observation](sampleObservations(initPolicy, replayBufferSize, initParams): _*)
     println("sampling finished")
 
-    val newNet = createModel()
+    val newNet = createModel(seed)
     val oldNet = newNet.clone()
     for(epoch <- 0 until maxIter){
       println(s"Epoch $epoch starts")
@@ -166,14 +214,16 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
   }
 
-  def networkToPolicy(net: MultiLayerNetwork, exploreRate: Option[Double])(state: State): Action = {
+  def networkToPolicy(net: MultiLayerNetwork, exploreRate: Option[Double])(state: State): (Action, PolicyInfo) = {
     exploreRate.foreach{ eRate =>
       if(rand.nextDouble() < eRate)
-        return SimpleMath.randomSelect(rand)(availableActions)
+        return (SimpleMath.randomSelect(rand)(availableActions), ExplorationInfo)
     }
-    availableActions.maxBy{ a =>
-      net.output(stateActionTensor(state, a), false).getDouble(0)
-    }
+
+    val inputs = Nd4j.create(availableActions.map(a => stateActionArray(state, a)).toArray)
+    val (qValue, idx) = net.output(inputs, false).data().asDouble().zipWithIndex.maxBy(_._1)
+
+    availableActions(idx) -> NetPolicyInfo(qValue)
   }
 
 
@@ -205,38 +255,4 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     (Nd4j.create(inputs), Nd4j.create(outputs))
   }
 
-  def createModel(): MultiLayerNetwork = {
-    val numIter = 1
-    val learningRate = 0.0005
-    val sizes = IS(observationLen,128,64,32)
-
-    def newLayer(id: Int) = {
-      new DenseLayer.Builder()
-        .nIn(sizes(id))
-        .nOut(sizes(id+1))
-        .activation(Activation.RELU)
-        .weightInit(WeightInit.XAVIER).build()
-    }
-
-    val config = new NeuralNetConfiguration.Builder()
-      .seed(seed)
-      .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
-      .iterations(numIter)
-      .learningRate(learningRate)
-      .updater(Updater.ADAM)
-      .regularization(true).l2(1e-4)
-      .list()
-      .layer(0, newLayer(0))
-      .layer(1, newLayer(1))
-      .layer(2, newLayer(2))
-      .layer(3, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
-        .nIn(sizes.last).nOut(1)
-        .activation(Activation.RELU).build())
-      .pretrain(false).backprop(true)
-      .build()
-
-    val net = new MultiLayerNetwork(config)
-    net.init()
-    net
-  }
 }
