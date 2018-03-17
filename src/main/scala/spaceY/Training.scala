@@ -73,14 +73,29 @@ object NetworkModel{
 
 }
 
-case class TrainingParams(batchSize: Int = 128,
-                          batchesPerDataCollect: Int = 10,
+case class TrainingParams(batchSize: Int = 64,
+                          batchesPerDataCollect: Int = 20,
                           seed: Int = 1,
                           gamma: Double = 0.999,
-                          replayBufferSize: Int = 20000,
-                          updateDataNum: Int = 200,
-                          copyInterval: Int = 40,
-                          learningRate: Double = 0.0005)
+                          replayBufferSize: Int = 50*100*10,
+                          updateDataNum: Int = 50,
+                          copyInterval: Int = 100,
+                          learningRate: Double = 0.002,
+                          threadNum: Int = 1){
+  def show: String = {
+    s"""
+       |batchSize: $batchSize
+       |batchesPerDataCollect: $batchesPerDataCollect
+       |seed: $seed
+       |gamma: $gamma
+       |replayBufferSize: $replayBufferSize
+       |updateDataNum: $updateDataNum
+       |copyInterval: $copyInterval
+       |learningRate: $learningRate
+       |threadNum: $threadNum
+     """.stripMargin
+  }
+}
 
 class Training(world: World, worldBound: WorldBound, initFuel: Double,
                initState: State, hitSpeedTolerance: Double, rotationTolerance: Double, params: TrainingParams) {
@@ -121,7 +136,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     SimpleMath.linearInterpolate(range._1, range._2)(rand.nextDouble())
   }
 
-  def sampleObservations(policy: RPolicy, sampleNum: Int, params: SamplingParams): (ListBuffer[FullSimulation], ListBuffer[Observation]) = {
+  def sampleObservations(policy: RPolicy, sampleNum: Int, params: SamplingParams, println: Any => Unit): (ListBuffer[FullSimulation], ListBuffer[Observation]) = {
     import params._
 
     val observations = mutable.ListBuffer[Observation]()
@@ -129,7 +144,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     var runs, landed = 0
     var nOb = 0
     while(nOb < sampleNum) {
-      println(s"sampling progress: $nOb / $sampleNum")
+      System.out.println(s"sampling progress: $nOb / $sampleNum")
       val initPos = Vec2(
         sampleInRange(initXRange),
         sampleInRange(initYRange)
@@ -143,18 +158,21 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       if(ending.isInstanceOf[Landed]){
         landed += 1
       }
-      val toCollect = sampleNum - nOb
-      val collected = trace.reverse.take(toCollect)
-      val last = stateToDoubles(collected.head._1) ++ actionToDoubles(collected.head._2._1)
+
+      val reverseTrace = trace.reverse
+      val last = stateToDoubles(reverseTrace.head._1) ++ actionToDoubles(reverseTrace.head._2._1)
       observations += Observation(last, None, Reward.endingReward(ending))
 
-      for(i <- 1 until collected.length){
-        val (s1, _) = collected(i-1)
-        val (s0, (a0, _)) = collected(i)
-        observations += Observation(stateActionArray(s0, a0), Some(stateToDoubles(s1)), 0)
+      val newTrace = mutable.ListBuffer[Observation]()
+      for(i <- 1 until reverseTrace.length){
+        val (s1, _) = reverseTrace(i-1)
+        val (s0, (a0, _)) = reverseTrace(i)
+        newTrace += Observation(stateActionArray(s0, a0), Some(stateToDoubles(s1)), 0)
       }
 
-      nOb += collected.length
+      val collected = rand.shuffle(newTrace).take(sampleNum - nOb - 1)
+      observations ++= collected
+      nOb += collected.length + 1
       runs += 1
     }
 
@@ -224,6 +242,9 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     FileInteraction.runWithAFileLogger(logFile) { logger =>
       import logger._
 
+      println("Parameters: ")
+      println(params.show)
+
       val start = System.nanoTime()
 
       def initPolicy(state: State): (Action, PolicyInfo) = {
@@ -238,7 +259,8 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
         goalXRange = (-worldBound.width / 4, worldBound.width / 4),
         fuelRange = (5, 15)
       )
-      val replayBuffer = mutable.Queue[Observation](sampleObservations(initPolicy, replayBufferSize, initParams)._2: _*)
+      val replayBuffer = mutable.Queue[Observation](
+        sampleObservations(initPolicy, replayBufferSize, initParams ,println)._2: _*)
       println("sampling finished")
 
       val newNet = createModel(seed, learningRate)
@@ -254,12 +276,13 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
         val trainParams = SamplingParams(
           initXRange = (-worldBound.width / 3, worldBound.width / 3),
-          initYRange = (0.0, 0.8 * worldBound.height),
+          initYRange = (0.1 * worldBound.height, 0.8 * worldBound.height),
           goalXRange = (-worldBound.width / 4, worldBound.width / 4),
           fuelRange = (0.1 * initFuel, initFuel)
         )
 
-        val (newSims, newObs) = sampleObservations(networkToPolicy(newNet, Some(exploreRate)), updateDataNum, trainParams)
+        val (newSims, newObs) = sampleObservations(networkToPolicy(newNet, Some(exploreRate)),
+          updateDataNum, trainParams, println)
         (0 until updateDataNum).foreach {
           _ => replayBuffer.dequeue()
         }
@@ -271,22 +294,28 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
           print(".")
         }
-        println()
+        println("")
         if (epoch % copyInterval == 0) {
           oldNet.setParams(newNet.params())
         }
-        val netReplaceRate: Double = 1.00/copyInterval
+        val netReplaceRate: Double = 1.00 / copyInterval
         val newNetParams = oldNet.params().mul(1.0 - netReplaceRate).add(newNet.params().mul(netReplaceRate))
         oldNet.setParams(newNetParams)
 
         if (epoch % 10 == 0) {
-          val sim@(FullSimulation(_, ending)) = newSims.maxBy(s => Reward.endingReward(s.ending))
+          if (epoch % 100 == 0) {
+            val policy = networkToPolicy(newNet, exploreRate = None) _
+            val sim@FullSimulation(_, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+            println(s"Test Ending: $ending")
+            println(s"Test Reward: ${Reward.endingReward(ending)}")
+            testTraces() = testTraces.now :+ sim
+          } else {
+            val sim@(FullSimulation(_, ending)) = newSims.maxBy(s => Reward.endingReward(s.ending))
 
-          //        val policy = networkToPolicy(newNet, exploreRate = None) _
-          //        val sim@FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
-          println(s"Test Ending: $ending")
-          println(s"Test Reward: ${Reward.endingReward(ending)}")
-          testTraces() = testTraces.now :+ sim
+            println(s"Best Ending: $ending")
+            println(s"Best Reward: ${Reward.endingReward(ending)}")
+            testTraces() = testTraces.now :+ sim
+          }
         }
       }
 
@@ -322,12 +351,12 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       obs(i)
     }
     val inputs = toUse.map(_.tensor)
-    val outputs = toUse.map { ob =>
+    val outputs = SimpleMath.parallelMap(toUse, threadNum){ ob =>
       Array(ob.newState match {
         case None => ob.reward
-        case Some(newS) => ob.reward + gamma * valueEstimation(oldNet, newNet, newS)
+        case Some(newS) => ob.reward + gamma * valueEstimation(oldNet, newNet, newS) //fixme
       })
-    }
+    }.toArray
     (Nd4j.create(inputs), Nd4j.create(outputs))
   }
 

@@ -90,6 +90,31 @@ object SimpleMath {
     }
   }
 
+//  /** preserve the order of result (but the running order is not preserved) **/
+//  def parallelArrayMap[A,B](threadNum: Int): (Seq[A], A => B) => Array[B] = {
+//    require(threadNum>0)
+//    import scala.collection.parallel
+//    import parallel._
+//
+//
+//    if(threadNum>1) {
+//      val taskSupport = new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(threadNum))
+//      (seq: Seq[A], f: A => B) => {
+//        val result = new Array[B](seq.length)
+//        val p = seq.zipWithIndex.par
+//        p.tasksupport = taskSupport
+//        p.foreach{ case (a, i) =>
+//          result(i) = f(a)
+//        }
+//        result
+//      }
+//    }else{
+//      (seq: Seq[A], f: A => B) => {
+//        seq.map(f).toArray
+//      }
+//    }
+//  }
+
   /**
     * Perform a map on a [[Seq]] in parallel. The order of starting each task is preserved as the [[Seq]].  */
   def parallelMapOrdered[A,B](seq: Seq[A], threadNum: Int, timeoutSec: Int = 20474834)(f: A => B): Seq[B] = {
