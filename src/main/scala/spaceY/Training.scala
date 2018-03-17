@@ -20,7 +20,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import NetworkModel._
-import javax.swing.{JButton, JFrame, JPanel}
+import javax.swing.{JButton, JFrame}
 import rx.{Rx, Var}
 
 object NetworkModel{
@@ -36,54 +36,66 @@ object NetworkModel{
     def displayInfo = s"Random Exploration"
   }
 
-  def createModel(seed: Int, learningRate: Double): MultiLayerNetwork = {
+  case class ModelParams(sizes: IS[Int] = IS(observationLen, 64, 32, 16),
+                         updater: Updater = Updater.NESTEROVS,
+                         learningRate: Double = 0.002){
+    def show: String = {
+      s"""
+         |sizes: ${sizes.mkString("[",", ","]")}
+         |updater: ${updater.name()}
+         |learningRate: $learningRate
+       """.stripMargin
+    }
+  }
+
+  def createModel(seed: Int, params: ModelParams): MultiLayerNetwork = {
     val numIter = 1
-    val sizes = IS(observationLen,64,32,16)
+    import params._
 
     def newLayer(id: Int) = {
       new DenseLayer.Builder()
         .nIn(sizes(id))
-        .nOut(sizes(id+1))
+        .nOut(sizes(id + 1))
         .activation(Activation.RELU)
         .weightInit(WeightInit.XAVIER).build()
     }
 
-    val config = new NeuralNetConfiguration.Builder()
+    var config = new NeuralNetConfiguration.Builder()
       .seed(seed)
       .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
       .iterations(numIter)
       .learningRate(learningRate)
-//      .updater(Updater.ADAM)
-      .updater(Updater.NESTEROVS)
+      .updater(updater)
       .regularization(true).l2(1e-4)
       .list()
-      .layer(0, newLayer(0))
-      .layer(1, newLayer(1))
-      .layer(2, newLayer(2))
-      .layer(3, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
-        .nIn(sizes.last).nOut(1)
-        .activation(Activation.RELU).build())
+
+    sizes.indices.init.foreach(i => config = config.layer(i, newLayer(i)))
+
+    val c1 = config.layer(sizes.length, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
+      .nIn(sizes.last).nOut(1)
+      .activation(Activation.RELU).build())
       .pretrain(false).backprop(true)
       .build()
 
-    val net = new MultiLayerNetwork(config)
+    val net = new MultiLayerNetwork(c1)
     net.init()
     net
   }
 
 }
 
-case class TrainingParams(batchSize: Int = 64,
+case class TrainingParams(modelParams: ModelParams = ModelParams(),
+                          batchSize: Int = 64,
                           batchesPerDataCollect: Int = 20,
                           seed: Int = 1,
                           gamma: Double = 0.999,
                           replayBufferSize: Int = 50*100*10,
                           updateDataNum: Int = 50,
                           copyInterval: Int = 100,
-                          learningRate: Double = 0.002,
                           threadNum: Int = 1){
   def show: String = {
     s"""
+       |modelParams: ${modelParams.show}
        |batchSize: $batchSize
        |batchesPerDataCollect: $batchesPerDataCollect
        |seed: $seed
@@ -91,7 +103,6 @@ case class TrainingParams(batchSize: Int = 64,
        |replayBufferSize: $replayBufferSize
        |updateDataNum: $updateDataNum
        |copyInterval: $copyInterval
-       |learningRate: $learningRate
        |threadNum: $threadNum
      """.stripMargin
   }
@@ -263,7 +274,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
         sampleObservations(initPolicy, replayBufferSize, initParams ,println)._2: _*)
       println("sampling finished")
 
-      val newNet = createModel(seed, learningRate)
+      val newNet = createModel(seed, modelParams)
       val oldNet = newNet.clone()
 
 
