@@ -128,7 +128,8 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
 
   val resultArea = new JLabel()
   def setResult(): Unit ={
-    resultArea.setText(simulations(simulation).ending.toString)
+    val ending = simulations(simulation).ending
+    resultArea.setText(s"Score: ${Reward.endingReward(ending)}, $ending")
   }
   setResult()
 

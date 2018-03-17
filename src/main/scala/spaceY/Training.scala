@@ -1,5 +1,7 @@
 package spaceY
 
+import java.awt.Dimension
+
 import org.deeplearning4j.nn.api.OptimizationAlgorithm
 import org.deeplearning4j.nn.conf.layers.{DenseLayer, OutputLayer}
 import org.deeplearning4j.nn.conf.{NeuralNetConfiguration, Updater}
@@ -34,10 +36,9 @@ object NetworkModel{
     def displayInfo = s"Random Exploration"
   }
 
-  def createModel(seed: Int): MultiLayerNetwork = {
+  def createModel(seed: Int, learningRate: Double): MultiLayerNetwork = {
     val numIter = 1
-    val learningRate = 0.0005
-    val sizes = IS(observationLen,128,64,32)
+    val sizes = IS(observationLen,64,32,16)
 
     def newLayer(id: Int) = {
       new DenseLayer.Builder()
@@ -52,7 +53,8 @@ object NetworkModel{
       .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
       .iterations(numIter)
       .learningRate(learningRate)
-      .updater(Updater.ADAM)
+//      .updater(Updater.ADAM)
+      .updater(Updater.NESTEROVS)
       .regularization(true).l2(1e-4)
       .list()
       .layer(0, newLayer(0))
@@ -71,41 +73,43 @@ object NetworkModel{
 
 }
 
+case class TrainingParams(batchSize: Int = 128,
+                          batchesPerDataCollect: Int = 10,
+                          seed: Int = 1,
+                          gamma: Double = 0.999,
+                          replayBufferSize: Int = 20000,
+                          updateDataNum: Int = 200,
+                          copyInterval: Int = 40,
+                          learningRate: Double = 0.0005)
+
 class Training(world: World, worldBound: WorldBound, initFuel: Double,
-               initState: State, hitSpeedTolerance: Double, rotationTolerance: Double) {
+               initState: State, hitSpeedTolerance: Double, rotationTolerance: Double, params: TrainingParams) {
 
   val terminateFunc: State => Option[SimulationEnding] =
     Simulator.standardTerminateFunc(worldBound, hitSpeedTolerance, rotationTolerance)
+  import params._
 
-  val batchSize = 128
-  val batchesPerDataCollect = 10
-  val seed = 1
   val rand = new Random(seed+1)
-  val gamma = 0.999
-  val replayBufferSize = 50000
-  val updateDataNum =  1000
 
   def stateToDoubles(state: State): Array[Double] = {
     import state._
-    Array(pos.x, pos.y, velocity.x, velocity.y,
-      SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft)
+    Array(pos.x/100, pos.y/100, velocity.x/10, velocity.y/10,
+      SimpleMath.wrapInRange(rotation+math.Pi, 2 * math.Pi) - math.Pi, goalX/100, fuelLeft)
   }
 
   def stateActionArray(state: State, action: Action): Array[Double] = {
-    import state._
-    Array(pos.x, pos.y, velocity.x, velocity.y,
-      SimpleMath.wrapInRange(rotation, 2*math.Pi), goalX, fuelLeft, action.rotationSpeed, action.thrust)
+    stateToDoubles(state) ++ actionToDoubles(action)
   }
 
   @inline
   def actionToDoubles(action: Action): Array[Double] = {
-    Array(action.rotationSpeed, action.thrust)
+    Array(action.rotationSpeed, 5*(action.thrust-0.5))
   }
 
   val availableActions: IS[Action] = {
     for(
-      rotate <- IS(math.Pi, -math.Pi);
-      thrust <- 0.0 to 1.0 by 0.1
+      rotate <- IS(1.0, 0.0, -1.0);
+      thrust <- 0.0 to 1.0 by 1.0/6
     ) yield Action(rotate, thrust)
   }
 
@@ -117,10 +121,11 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     SimpleMath.linearInterpolate(range._1, range._2)(rand.nextDouble())
   }
 
-  def sampleObservations(policy: RPolicy, sampleNum: Int, params: SamplingParams): ListBuffer[Observation] = {
+  def sampleObservations(policy: RPolicy, sampleNum: Int, params: SamplingParams): (ListBuffer[FullSimulation], ListBuffer[Observation]) = {
     import params._
 
     val observations = mutable.ListBuffer[Observation]()
+    val simulations = mutable.ListBuffer[FullSimulation]()
     var runs, landed = 0
     var nOb = 0
     while(nOb < sampleNum) {
@@ -131,9 +136,10 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
       )
       val initV = Vec2(10* rand.nextDouble(), 5*rand.nextDouble())
       val goalX = sampleInRange(goalXRange)
-      val initState = State(initPos, initV, rotation = 0, goalX, fuelLeft = sampleInRange(fuelRange))
+      val initState = State(initPos, initV, rotation = rand.nextDouble() - 0.5, goalX, fuelLeft = sampleInRange(fuelRange))
 
-      val FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+      val sim@FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+      simulations+=sim
       if(ending.isInstanceOf[Landed]){
         landed += 1
       }
@@ -153,7 +159,7 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
     }
 
     println(s"Sample landing rate: ${landed.toDouble / runs}")
-    observations
+    (simulations, observations)
   }
 
   case class Observation(tensor: Array[Double], newState: Option[Array[Double]], reward: Double){
@@ -162,109 +168,129 @@ class Training(world: World, worldBound: WorldBound, initFuel: Double,
 
   case class TrainingState()
 
-  def train(maxIter: Int, netReplaceRate: Double, exploreRateFunc: Int => Double) = {
+  def train(maxIter: Int, exploreRateFunc: Int => Double) = {
     import rx.Ctx.Owner.Unsafe._
 
-    def initPolicy(state: State): (Action, PolicyInfo) = {
-      val thrust = world.gravity.magnitude / world.maxThrust - 0.1 * rand.nextDouble()
-      Action(rotationSpeed = 0.0 , thrust) -> NoInfo
-    }
+    val testTraces: Var[IS[FullSimulation]] = {
+      val evaluations = Var(IS[FullSimulation]())
 
-    println("sampling init observations")
-    val initParams = SamplingParams(
-      initXRange = (-worldBound.width/3, worldBound.width/3),
-      initYRange = (0.0, worldBound.height/3),
-      goalXRange = (-worldBound.width/4, worldBound.width/4),
-      fuelRange = (5, 15)
-    )
-    val replayBuffer = mutable.Queue[Observation](sampleObservations(initPolicy, replayBufferSize, initParams): _*)
-    println("sampling finished")
-
-    val newNet = createModel(seed)
-    val oldNet = newNet.clone()
-
-    val evaluations = Var(IS[FullSimulation]())
-
-    val placeholder = GUI.panel(horizontal = false)()
-    val dataButton = new JButton("Fetch data")
-    val frame = new JFrame()
-    frame.setContentPane(
-      GUI.panel(horizontal = false)(
-        placeholder,
-        GUI.panel(horizontal = true)(dataButton, GUI.panel(horizontal = false)())
+      val placeholder = GUI.panel(horizontal = false)()
+      val dataButton = new JButton("Fetch data")
+      val frame = new JFrame()
+      frame.setContentPane(
+        GUI.panel(horizontal = false)(
+          placeholder,
+          GUI.panel(horizontal = true)(dataButton, GUI.panel(horizontal = false)())
+        )
       )
-    )
-    var oldSCPanel: Option[StateWithControlPanel] = None
+      var oldSCPanel: Option[StateWithControlPanel] = None
 
-    def replaceUI(): Unit ={
-      val newP = oldSCPanel match{
-        case None =>
-          new StateWithControlPanel(worldBound, evaluations.now, 0, 0)
-        case Some(op) =>
-          val np = new StateWithControlPanel(worldBound, evaluations.now, op.simulation, op.step)
-          np.jPanel.setPreferredSize(op.jPanel.getSize)
-          op.stopTracking()
-          np
+      def replaceUI(): Unit = {
+        val newP = oldSCPanel match {
+          case None =>
+            new StateWithControlPanel(worldBound, evaluations.now, 0, 0){
+              jPanel.setPreferredSize(new Dimension(600, ((worldBound.height/worldBound.width)*600).toInt))
+            }
+          case Some(op) =>
+            val np = new StateWithControlPanel(worldBound, evaluations.now, op.simulation, op.step)
+            np.jPanel.setPreferredSize(op.jPanel.getSize)
+            op.stopTracking()
+            np
+        }
+
+        placeholder.removeAll()
+        placeholder.add(newP.jPanel)
+        frame.pack()
+
+        oldSCPanel = Some(newP)
       }
 
-      placeholder.removeAll()
-      placeholder.add(newP.jPanel)
-      frame.pack()
+      evaluations.triggerLater {
+        if (oldSCPanel.isEmpty) {
+          frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+          frame.setVisible(true)
+          replaceUI()
+        }
+      }
 
-      oldSCPanel = Some(newP)
-    }
-
-    evaluations.triggerLater{
-      if(oldSCPanel.isEmpty){
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
-        frame.setVisible(true)
+      dataButton.addActionListener(_ => {
         replaceUI()
-      }
+      })
+
+      evaluations
     }
 
-    dataButton.addActionListener(_ => {
-      replaceUI()
-    })
+    val logFile = s"results/${TimeTools.numericalDateTime()}"
+    FileInteraction.runWithAFileLogger(logFile) { logger =>
+      import logger._
 
+      val start = System.nanoTime()
 
-    for(epoch <- 0 until maxIter){
-      println(s"Epoch $epoch starts")
-
-//      val exploreRate = 1.0/(4.0+epoch.toDouble/10)
-      val exploreRate = exploreRateFunc(epoch)
-
-      val trainParams = SamplingParams(
-        initXRange = (-worldBound.width/3, worldBound.width/3),
-        initYRange = (0.1 * worldBound.height, 0.8 * worldBound.height),
-        goalXRange = (-worldBound.width/4, worldBound.width/4),
-        fuelRange = (initFuel * math.max(0, 0.5 - exploreRate), initFuel)
-      )
-
-      val newObs = sampleObservations(networkToPolicy(newNet, Some(exploreRate)), updateDataNum, trainParams)
-      (0 until updateDataNum).foreach{
-        _ => replayBuffer.dequeue()
+      def initPolicy(state: State): (Action, PolicyInfo) = {
+        val thrust = world.gravity.magnitude / world.maxThrust - 0.1 * rand.nextDouble()
+        Action(rotationSpeed = 0.0, thrust) -> NoInfo
       }
-      replayBuffer.enqueue(newObs :_*)
 
-      for(b <- 0 until batchesPerDataCollect){
-        val (features, labels) = getBatch(replayBuffer, oldNet, newNet, batchSize)
-        newNet.fit(new DataSet(features, labels))
+      println("sampling init observations")
+      val initParams = SamplingParams(
+        initXRange = (-worldBound.width / 3, worldBound.width / 3),
+        initYRange = (0.0, worldBound.height / 3),
+        goalXRange = (-worldBound.width / 4, worldBound.width / 4),
+        fuelRange = (5, 15)
+      )
+      val replayBuffer = mutable.Queue[Observation](sampleObservations(initPolicy, replayBufferSize, initParams)._2: _*)
+      println("sampling finished")
 
+      val newNet = createModel(seed, learningRate)
+      val oldNet = newNet.clone()
+
+
+      for (epoch <- 0 until maxIter) {
+        val timePassed = java.time.Duration.ofNanos(System.nanoTime() - start).getSeconds
+        println(s"Epoch $epoch starts [$timePassed s]")
+
+        //      val exploreRate = 1.0/(4.0+epoch.toDouble/10)
+        val exploreRate = exploreRateFunc(epoch)
+
+        val trainParams = SamplingParams(
+          initXRange = (-worldBound.width / 3, worldBound.width / 3),
+          initYRange = (0.0, 0.8 * worldBound.height),
+          goalXRange = (-worldBound.width / 4, worldBound.width / 4),
+          fuelRange = (0.1 * initFuel, initFuel)
+        )
+
+        val (newSims, newObs) = sampleObservations(networkToPolicy(newNet, Some(exploreRate)), updateDataNum, trainParams)
+        (0 until updateDataNum).foreach {
+          _ => replayBuffer.dequeue()
+        }
+        replayBuffer.enqueue(newObs: _*)
+
+        for (b <- 0 until batchesPerDataCollect) {
+          val (features, labels) = getBatch(replayBuffer, oldNet, newNet, batchSize)
+          newNet.fit(new DataSet(features, labels))
+
+          print(".")
+        }
+        println()
+        if (epoch % copyInterval == 0) {
+          oldNet.setParams(newNet.params())
+        }
+        val netReplaceRate: Double = 1.00/copyInterval
         val newNetParams = oldNet.params().mul(1.0 - netReplaceRate).add(newNet.params().mul(netReplaceRate))
         oldNet.setParams(newNetParams)
 
-        print(".")
+        if (epoch % 10 == 0) {
+          val sim@(FullSimulation(_, ending)) = newSims.maxBy(s => Reward.endingReward(s.ending))
+
+          //        val policy = networkToPolicy(newNet, exploreRate = None) _
+          //        val sim@FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+          println(s"Test Ending: $ending")
+          println(s"Test Reward: ${Reward.endingReward(ending)}")
+          testTraces() = testTraces.now :+ sim
+        }
       }
-      println()
 
-
-      val policy = networkToPolicy(newNet, exploreRate = None) _
-      val sim@FullSimulation(trace, ending) = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
-      println(s"Test Ending: $ending")
-      println(s"Test Reward: ${Reward.endingReward(ending)}")
-      evaluations() = evaluations.now :+ sim
     }
-
   }
 
   def networkToPolicy(net: MultiLayerNetwork, exploreRate: Option[Double])(state: State): (Action, PolicyInfo) = {

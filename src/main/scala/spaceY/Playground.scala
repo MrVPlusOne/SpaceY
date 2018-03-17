@@ -19,23 +19,23 @@ object Playground {
   def main(args: Array[String]): Unit = {
 //    BasicConfigurator.configure()
 
+    val params = TrainingParams()
+
     val bound = WorldBound(width = 200, height = 150)
     val train = new Training(world, bound,
-      initFuel = 10, hitSpeedTolerance = 12, rotationTolerance = 0.4 * math.Pi,
-      initState = State(pos = Vec2(-50, 125), velocity = Vec2.zero, rotation = 0, goalX = 20, fuelLeft = 10)
+      initFuel = 10, hitSpeedTolerance = 30, rotationTolerance = 0.4 * math.Pi,
+      initState = State(pos = Vec2(-50, 125), velocity = Vec2.zero, rotation = 0, goalX = 20, fuelLeft = 10),
+      params = params
     )
 
-    train.train(1000, netReplaceRate = 0.01,
-      exploreRateFunc = e => 1.0/(5.0+e.toDouble/100))
+    train.train(20000,
+      exploreRateFunc = e => 0.05/(5+e.toDouble/100))
   }
 
   def testUI(args: Array[String]): Unit = {
     val bound = WorldBound(width = 250, height = 150)
     val initState = State(Vec2(50, 100), Vec2.left * 10, math.Pi * 0.5, goalX = 10, fuelLeft = 10)
 
-    def rotatePolicy(state: State): Action = {
-      Action(rotationSpeed = 0.3 * math.Pi, thrust = 0.9)
-    }
 
     val rand = new Random(1)
     def randomPolicy(state: State): (Action, PolicyInfo) = {
