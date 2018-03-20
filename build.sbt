@@ -13,6 +13,7 @@ libraryDependencies += "org.deeplearning4j" % "deeplearning4j-core" % "0.9.1"
 classpathTypes += "maven-plugin"
 
 libraryDependencies ++= Seq(
+  "org.jfree" % "jfreechart" % "1.0.14",
   "org.nd4j" % "nd4j-native-platform" % "0.9.1",
   "org.slf4j" % "slf4j-api" % "1.7.5",
   "org.slf4j" % "slf4j-log4j12" % "1.7.5",

@@ -21,9 +21,9 @@ object Playground {
 
     val bound = WorldBound(width = 200, height = 150)
     val availableActions: IS[Action] = {
-      for(
+      for (
         rotate <- IS(1.0, 0.0, -1.0);
-        thrust <- 0.0 to 1.0 by 1.0/6
+        thrust <- 0.0 to 1.0 by 1.0 / 6
       ) yield Action(rotate, thrust)
     }
 
@@ -32,17 +32,17 @@ object Playground {
       State(pos = Vec2(20, 125), velocity = Vec2.zero, rotation = Rotation2(0), goalX = 75, fuelLeft = 10),
       State(pos = Vec2(-75, 100), velocity = Vec2.zero, rotation = Rotation2(0), goalX = 75, fuelLeft = 10),
       State(pos = Vec2(0, 125), velocity = Vec2.zero, rotation = Rotation2(-0.65), goalX = 25, fuelLeft = 10),
-      State(pos = Vec2(-25, 75), velocity = Vec2(-10,-10), rotation = Rotation2(0), goalX = 25, fuelLeft = 10)
+      State(pos = Vec2(-25, 75), velocity = Vec2(-10, -10), rotation = Rotation2(0), goalX = 25, fuelLeft = 10)
     )
 
     def sampleInitState(random: Random): State = {
       def between(from: Double, to: Double) = SimpleMath.linearInterpolate(from, to)(random.nextDouble())
 
       State(
-        pos = Vec2(between(-80, 80), between(50,125)),
-        velocity = Vec2(between(-20,20), between(-20,20)),
+        pos = Vec2(between(-80, 80), between(50, 125)),
+        velocity = Vec2(between(-20, 20), between(-20, 20)),
         rotation = Rotation2(SimpleMath.cubic(between(-1.0, 1.0))),
-        goalX = between(-20,80),
+        goalX = between(-20, 80),
         fuelLeft = 10
       )
     }
@@ -50,16 +50,16 @@ object Playground {
     val taskParams = TaskParams(world, bound, availableActions, initStates,
       hitSpeedTolerance = 30, rotationTolerance = 0.4,
       rewardFunction = RewardFunction.LinearProduct(
-        driftTolerance = bound.width/3,
-        rotationTolerance = 1.0/2,
-        speedTolerance = math.sqrt(2.0 * world.gravity.magnitude * bound.height)/2))
+        driftTolerance = bound.width / 3,
+        rotationTolerance = 1.0 / 2,
+        speedTolerance = math.sqrt(2.0 * world.gravity.magnitude * bound.height) / 2))
 
     val terminateFunc = Simulator.standardTerminateFunc(taskParams.worldBound,
       taskParams.hitSpeedTolerance, taskParams.rotationTolerance) _
 
     def balanceThrustPolicy(state: State): (Action, PolicyInfo) = {
       val thrust = world.gravity.magnitude / world.maxThrust - 0.1
-      val rotSpeed = if(state.rotation.angle > 0) -1.0 else 1.0
+      val rotSpeed = if (state.rotation.angle > 0) -1.0 else 1.0
       Action(rotationSpeed = rotSpeed, thrust) -> NoInfo
     }
 
@@ -69,41 +69,50 @@ object Playground {
       sampleInitState = sampleInitState
     )
 
-    val visualizer = new TraceVisualizer(IS(), IS(), taskParams.worldBound)
+    val visualizer = new TraceVisualizer(taskParams.worldBound)
+    var trainingReward = 0.0
+    val gamma = 1.0 / 50
+
     def checkPointAction(checkPoint: CheckPoint): Unit = {
       import checkPoint._
 
-      val needInit = visualizer.dataNum == 0
+      val needInit = visualizer.traceNum == 0
 
-      if (iteration % 10 == 0) {
-        if (iteration % 100 == 0) {
-          val policy = NetworkModel.networkToPolicy(newNet, availableActions, exploreRate = None) _
-          val scores = initStates.zipWithIndex.map { case (initState, i) =>
-            val sim = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
-            val r = taskParams.rewardFunction.reward(sim.ending)
-            visualizer.addTrace(s"Test[iter=$iteration, taskId=$i]", sim, r)
-            r
-          }
-          val testReward = SimpleMath.mean(scores)
-          println(s"Test Avg Reward[iter=$iteration]: $testReward")
+
+      if (iteration % 50 == 0) {
+        val policy = NetworkModel.networkToPolicy(newNet, availableActions, exploreRate = None) _
+        val scores = initStates.zipWithIndex.map { case (initState, i) =>
+          val sim = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
+          val r = taskParams.rewardFunction.reward(sim.ending)
+          visualizer.addTrace(s"Test[iter=$iteration, taskId=$i]", sim, r)
+          r
         }
-        val avgReward = SimpleMath.mean(newSims.map(s => taskParams.rewardFunction.reward(s.ending)))
-
-        println(s"Avg Reward[iter=$iteration]: $avgReward")
+        val testReward = SimpleMath.mean(scores)
+        visualizer.addTestScore(iteration, testReward)
+        println(s"Test Avg Reward[iter=$iteration]: $testReward")
       }
+      newSims.map(s => taskParams.rewardFunction.reward(s.ending)).foreach { r =>
+        trainingReward = trainingReward * (1.0 - gamma) + gamma * r
+      }
+      visualizer.addTrainScore(iteration, trainingReward)
+      println(s"Exp Weighted Reward[iter=$iteration]: $trainingReward")
 
-      if(needInit){
+      if (needInit) {
         visualizer.redisplayData()
         visualizer.initializeFrame()
       }
+      if(iteration % 1 == 0 && visualizer.seeCurve){
+        visualizer.redisplayData()
+      }
     }
 
-//    NetworkModel.createModel()
+
+    //    NetworkModel.createModel()
     import ammonite.ops._
 
     val resultsDir = pwd / "results" / TimeTools.numericalDateTime()
     train.train(20000,
-      exploreRateFunc = e => 0.05/(5+e.toDouble/100), resultsDir, checkPointAction)
+      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 100), resultsDir, checkPointAction)
   }
 
   def testUI(args: Array[String]): Unit = {

@@ -96,10 +96,14 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action, i
   }
 }
 
-class TraceVisualizer(private var traces: IS[(String, FullSimulation)],
-                      private var scores: IS[Double],
-                      worldBound: WorldBound) {
-  def dataNum = traces.length
+class TraceVisualizer(worldBound: WorldBound,
+                      private var traces: IS[(String, FullSimulation)] = IS(),
+                      private var scores: IS[Double] = IS(),
+                      private var trainingScores: IS[(Double, Double)] = IS(),
+                      private var testScores: IS[(Double, Double)] = IS()
+                     ) {
+
+  def traceNum = traces.length
 
   def addTrace(name: String, simulation: FullSimulation, score: Double) = {
     traces :+= (name, simulation)
@@ -107,11 +111,39 @@ class TraceVisualizer(private var traces: IS[(String, FullSimulation)],
   }
 
   val placeholder = GUI.panel(horizontal = false)()
+  var seeCurve = true
+  val curveSwitcher = new JRadioButton("Curves"){
+    setSelected(true)
+    addActionListener(_ => {
+      seeCurve = true
+      redisplayData()
+    })
+  }
+  val traceSwitcher = new JRadioButton("Traces"){
+    addActionListener(_ => {
+      seeCurve = false
+      redisplayData()
+    })
+  }
+  private val bg = new ButtonGroup(){
+    add(curveSwitcher)
+    add(traceSwitcher)
+  }
+
+  def addTestScore(iteration: Int, score: Double) = {
+    testScores :+= (iteration.toDouble, score)
+  }
+
+  def addTrainScore(iteration: Int, score: Double) = {
+    trainingScores :+= (iteration.toDouble, score)
+  }
+
   val dataButton = new JButton("Fetch data")
   val frame = new JFrame()
   frame.setContentPane(
     GUI.panel(horizontal = false)(
       placeholder,
+      GUI.panel(horizontal = true)(curveSwitcher, traceSwitcher),
       GUI.panel(horizontal = true)(dataButton, GUI.panel(horizontal = false)())
     )
   )
@@ -127,23 +159,38 @@ class TraceVisualizer(private var traces: IS[(String, FullSimulation)],
   def redisplayData(): Unit = {
     import rx.Ctx.Owner.Unsafe._
 
-    val newP = oldSCPanel match {
-      case None =>
-        new StateWithControlPanel(worldBound, traces, scores, 0, 0) {
-          jPanel.setPreferredSize(new Dimension(600, ((worldBound.height / worldBound.width) * 600).toInt))
-        }
-      case Some(op) =>
-        val np = new StateWithControlPanel(worldBound, traces, scores, op.simulation, op.step)
-        np.jPanel.setPreferredSize(op.jPanel.getSize)
-        op.stopTracking()
-        np
+    val size = placeholder.getComponents.headOption.map(_.getSize()).getOrElse(
+      new Dimension(600, ((worldBound.height / worldBound.width) * 600).toInt))
+
+    val panelToShow = if(seeCurve){
+      val newChart = if(testScores.nonEmpty){
+        Some(ListPlot.plot("Test Score" -> testScores, "Train Score" -> trainingScores)(
+          plotName = "Score Curves",
+          xLabel = "Iteration",
+          yLabel = "Score"
+        ))
+      }else{
+        None
+      }
+      oldSCPanel = None
+      new MonitorPanel(newChart, margin = 10, plotSize = (size.width, size.height))
+    }else{
+      val newStatePanel = oldSCPanel match {
+        case None =>
+          new StateWithControlPanel(worldBound, traces, scores, 0, 0)
+        case Some(op) =>
+          val np = new StateWithControlPanel(worldBound, traces, scores, op.simulation, op.step)
+          op.stopTracking()
+          np
+      }
+      oldSCPanel = Some(newStatePanel)
+      newStatePanel.jPanel
     }
 
+    panelToShow.setPreferredSize(size)
     placeholder.removeAll()
-    placeholder.add(newP.jPanel)
+    placeholder.add(panelToShow)
     frame.pack()
-
-    oldSCPanel = Some(newP)
   }
 
 
