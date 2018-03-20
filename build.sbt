@@ -20,5 +20,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-testkit" % "2.5.6" % Test
 )
 
+libraryDependencies += "com.lihaoyi" %% "ammonite-ops" % "1.0.3"
+
 //libraryDependencies += "org.platanios" %% "tensorflow" % "0.1.1" classifier "darwin-cpu-x86_64"
 //libraryDependencies += "org.platanios" %% "tensorflow" % "0.1.1"

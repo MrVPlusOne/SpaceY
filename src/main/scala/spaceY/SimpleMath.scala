@@ -1,20 +1,33 @@
 package spaceY
 
+import javax.xml.bind.annotation.XmlInlineBinaryData
+
 import scala.util.Random
 
 object SimpleMath {
+  def relu(x: Double): Double = if(x<0) 0.0 else x
+
   def wrapInRange(i: Int, range: Int): Int = {
     val m = i % range
     if (m < 0) m + range else m
   }
 
-  def wrapInRange(x: Double, range: Double): Double = {
-    val m = x % range
-    if(m < 0) m + range else m
+  def wrapInRange(x: Double, size: Double): Double = {
+    val m = x % size
+    if(m < 0) m + size else m
   }
+
+  def wrapInRange(x: Double, low: Double, high: Double): Double = {
+    wrapInRange(x - low, high-low) + low
+  }
+
+  def mean(xs: Seq[Double]): Double = xs.sum / xs.length
 
   @inline
   def square(x: Double): Double = x * x
+
+  @inline
+  def cubic(x: Double): Double = x*x*x
 
   def gaussianForthOrder(halfPoint: Double)(x: Double): Double = {
     math.pow(2,-math.pow(x/halfPoint,4))

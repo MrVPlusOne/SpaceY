@@ -3,8 +3,10 @@ package spaceY
 import java.io._
 import java.nio.file.{Files, Paths}
 
+import ammonite.ops._
 
-class FileLogger(fileName: String, printToConsole: Boolean, writer: FileWriter) {
+
+class FileLogger(printToConsole: Boolean, writer: FileWriter) {
 
   def println(obj: Any): Unit ={
     val s = obj.toString
@@ -58,10 +60,10 @@ object FileInteraction{
     Files.deleteIfExists(Paths.get(filePath))
   }
 
-  def runWithAFileLogger[T](fileName: String, printToConsole: Boolean = true)(f: FileLogger => T): T = {
-    mkDirsAlongPath(fileName.split("/").init.mkString("/"))
-    val writer = new FileWriter(fileName)
-    val logger = new FileLogger(fileName, printToConsole, writer)
+  def runWithAFileLogger[T](filePath: Path, printToConsole: Boolean = true)(f: FileLogger => T): T = {
+    mkdir(filePath/up)
+    val writer = new FileWriter(filePath.toString())
+    val logger = new FileLogger(printToConsole, writer)
     try{
       f(logger)
     }finally {

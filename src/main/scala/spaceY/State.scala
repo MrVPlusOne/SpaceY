@@ -1,12 +1,13 @@
 package spaceY
 
-import spaceY.Geometry2D.Vec2
-import spaceY.Simulator.{FullSimulation, RPolicy, PolicyInfo}
+import spaceY.Geometry2D.{Vec2, Rotation2}
+import spaceY.Simulator.{FullSimulation, PolicyInfo, RPolicy, WorldBound}
 
 
-case class State(pos: Vec2, velocity: Vec2, rotation: Double, goalX: Double, fuelLeft: Double) {
+case class State(pos: Vec2, velocity: Vec2, rotation: Rotation2, goalX: Double, fuelLeft: Double) {
+
   override def toString: String = {
-    s"State(F: %.1f, P: $pos, V: $velocity, R: %.2f, G: %.1f)".format(fuelLeft, rotation, goalX)
+    s"State(F: %.1f, P: $pos, V: $velocity, R: %s, G: %.1f)".format(fuelLeft, rotation, goalX)
   }
 }
 
@@ -22,7 +23,7 @@ case class World(gravity: Vec2, maxThrust: Double, deltaT: Double){
     val newPos = state.pos + state.velocity * deltaT
     val newVelocity = state.velocity + gravity * deltaT +
       (Vec2.up * maxThrust * action.thrust).rotate(state.rotation) * deltaT
-    val newRotation = state.rotation + action.rotationSpeed * deltaT
+    val newRotation = state.rotation.rotate(action.rotationSpeed * deltaT)
     val newState = State(newPos, newVelocity, newRotation, state.goalX, state.fuelLeft - deltaT * action.thrust)
 
     newState
@@ -72,9 +73,8 @@ object Simulator{
     if(math.abs(state.pos.x) > bound.width/2 || state.pos.y > bound.height) return Some(Crashed(state, "out of bound"))
 
     if(state.pos.y <= 0){
-      if(math.abs(state.rotation) < rotationTolerance && state.velocity.magnitude < hitSpeedTolerance){
-        val score = (1.0 - 0.5 * state.rotation / rotationTolerance) * (1.0 - 0.5 * state.velocity.magnitude / hitSpeedTolerance)
-        return Some(Landed(state, score))
+      if(state.rotation.abs < rotationTolerance && state.velocity.magnitude < hitSpeedTolerance){
+        return Some(Landed(state))
       }else{
         return Some(Crashed(state, "landing failed"))
       }
@@ -86,5 +86,28 @@ object Simulator{
 
 
 sealed trait SimulationEnding
-case class Landed(state: State, landingScore: Double) extends SimulationEnding
+case class Landed(state: State) extends SimulationEnding
 case class Crashed(state: State, info: String) extends SimulationEnding
+
+
+case class TaskParams(
+                       world: World,
+                       worldBound: WorldBound,
+                       availableActions: IS[Action],
+                       initStates: IS[State],
+                       hitSpeedTolerance: Double,
+                       rotationTolerance: Double,
+                       rewardFunction: RewardFunction
+                     ){
+  override def toString: String = {
+    s"""
+       |world: $world
+       |worldBound: $worldBound
+       |availableActions: $availableActions
+       |initStates: $initStates
+       |hitSpeedTolerance: $hitSpeedTolerance
+       |rotationTolerance: $rotationTolerance
+       |rewardFunction: $rewardFunction
+     """.stripMargin
+  }
+}

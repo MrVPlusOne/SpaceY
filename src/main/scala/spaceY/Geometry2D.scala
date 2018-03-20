@@ -12,9 +12,9 @@ object Geometry2D {
 
     def *(d: Double): Vec2 = Vec2(d * x, d * y)
 
-    def rotate(angle: Double): Vec2 = {
-      val c = math.cos(angle)
-      val s = math.sin(angle)
+    def rotate(rot: Rotation2): Vec2 = {
+      val c = rot.cos
+      val s = rot.sin
       Vec2(x * c - s * y, y * c + s * x)
     }
 
@@ -32,5 +32,27 @@ object Geometry2D {
   }
 
   case class Line2(from: Vec2, to: Vec2)
+
+  class Rotation2 private(val angle: Double){
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case r: Rotation2 => angle == r.angle
+    }
+
+    override def toString: String = "r%.2f".format(angle)
+
+    def sin: Double = math.sin(angle * math.Pi)
+
+    def cos: Double = math.cos(angle * math.Pi)
+
+    def rotate(delta: Double): Rotation2 = Rotation2(angle + delta)
+
+    def abs: Double = math.abs(angle)
+  }
+
+  object Rotation2 {
+    def apply(angle: Double): Rotation2 = {
+      new Rotation2(SimpleMath.wrapInRange(angle, -1.0, 1.0))
+    }
+  }
 
 }

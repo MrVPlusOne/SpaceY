@@ -93,6 +93,62 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action, i
   }
 }
 
+class TraceVisualizer(private var traces: IS[(String, FullSimulation)],
+                      private var scores: IS[Double],
+                      worldBound: WorldBound) {
+  def dataNum = traces.length
+
+  def addTrace(name: String, simulation: FullSimulation, score: Double) = {
+    traces :+= (name, simulation)
+    scores :+= score
+  }
+
+  val placeholder = GUI.panel(horizontal = false)()
+  val dataButton = new JButton("Fetch data")
+  val frame = new JFrame()
+  frame.setContentPane(
+    GUI.panel(horizontal = false)(
+      placeholder,
+      GUI.panel(horizontal = true)(dataButton, GUI.panel(horizontal = false)())
+    )
+  )
+  var oldSCPanel: Option[StateWithControlPanel] = None
+
+  def initializeFrame(): Unit = {
+    require(traces.nonEmpty)
+    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+    frame.setVisible(true)
+    redisplayData()
+  }
+
+  def redisplayData(): Unit = {
+    import rx.Ctx.Owner.Unsafe._
+
+    val newP = oldSCPanel match {
+      case None =>
+        new StateWithControlPanel(worldBound, traces, scores, 0, 0) {
+          jPanel.setPreferredSize(new Dimension(600, ((worldBound.height / worldBound.width) * 600).toInt))
+        }
+      case Some(op) =>
+        val np = new StateWithControlPanel(worldBound, traces, scores, op.simulation, op.step)
+        np.jPanel.setPreferredSize(op.jPanel.getSize)
+        op.stopTracking()
+        np
+    }
+
+    placeholder.removeAll()
+    placeholder.add(newP.jPanel)
+    frame.pack()
+
+    oldSCPanel = Some(newP)
+  }
+
+
+  dataButton.addActionListener(_ => {
+    redisplayData()
+  })
+}
+
 class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
   val margin = 10
 
@@ -112,13 +168,13 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
   def stopTracking(): Unit = repaintObs.kill()
 }
 
-class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulation],
+class StateWithControlPanel(worldBound: WorldBound, simulations: IS[(String, FullSimulation)], scores: IS[Double],
                             var simulation: Int, var step: Int)(implicit ctx: Ctx.Owner){
   val sliderSize = new Dimension(200,20)
 
 
   def mkVisual() = {
-    val (s, a) = simulations(simulation).trace(step)
+    val (s, a) = simulations(simulation)._2.trace(step)
     Visualization(worldBound, s, a._1, a._2)
   }
 
@@ -127,9 +183,11 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
   }
 
   val resultArea = new JLabel()
+  val nameLabel = new JLabel()
   def setResult(): Unit ={
-    val ending = simulations(simulation).ending
-    resultArea.setText(s"Score: ${Reward.endingReward(ending)}, $ending")
+    val (name, fullSim) = simulations(simulation)
+    nameLabel.setText(s"Name: $name")
+    resultArea.setText(s"Score: ${scores(simulation)}, ${fullSim.ending}")
   }
   setResult()
 
@@ -142,14 +200,14 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
       resetStepSelector(simulation)
     }
   }
-  val stepSelector: JSlider = new JSlider(0, simulations(simulation).trace.length-1, step){
+  val stepSelector: JSlider = new JSlider(0, simulations(simulation)._2.trace.length-1, step){
     setPreferredSize(sliderSize)
     setMajorTickSpacing(1)
   }
 
 
   def resetStepSelector(simulation: Int): Unit ={
-    stepSelector.setMaximum(simulations(simulation).trace.length-1)
+    stepSelector.setMaximum(simulations(simulation)._2.trace.length-1)
     stepSelector.setValue(0)
   }
   stepSelector.addChangeListener{_ =>
@@ -167,6 +225,7 @@ class StateWithControlPanel(worldBound: WorldBound, simulations: IS[FullSimulati
 
     panel(horizontal = false)(
       statePanel.jPanel,
+      nameLabel,
       resultArea,
       panel(horizontal = true)(
         panel(horizontal = true)(
@@ -187,7 +246,7 @@ object TestVisual{
   def main(args: Array[String]): Unit = {
     Rx.unsafe {
       val visual = Var {
-        val s = State(Vec2(1.3, 1), Vec2.zero, math.Pi * 0.2, goalX = 0.5, fuelLeft = 3)
+        val s = State(Vec2(1.3, 1), Vec2.zero, Rotation2(0.2), goalX = 0.5, fuelLeft = 3)
         Visualization(WorldBound(width = 600, height = 500), s, Action(0,0), NoInfo)
       }
 
