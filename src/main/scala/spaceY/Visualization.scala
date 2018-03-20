@@ -3,6 +3,7 @@ package spaceY
 import java.awt._
 import java.awt.geom.{GeneralPath, Line2D}
 
+import ammonite.ops.Path
 import javax.swing._
 import rx._
 import spaceY.Geometry2D._
@@ -96,22 +97,74 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action, i
   }
 }
 
-class TraceVisualizer(worldBound: WorldBound,
-                      private var traces: IS[(String, FullSimulation)] = IS(),
-                      private var scores: IS[Double] = IS(),
-                      private var trainingScores: IS[(Double, Double)] = IS(),
-                      private var testScores: IS[(Double, Double)] = IS()
-                     ) {
+abstract class TraceRecorder(worldBound: WorldBound,
+                             protected var traces: IS[(String, FullSimulation)] = IS(),
+                             protected var scores: IS[Double] = IS(),
+                             protected var trainingScores: IS[(Double, Double)] = IS(),
+                             protected var testScores: IS[(Double, Double)] = IS()) {
+  var seeCurve = true
 
-  def traceNum = traces.length
+  def traceNum: Int = traces.length
 
-  def addTrace(name: String, simulation: FullSimulation, score: Double) = {
+  def addTrace(name: String, simulation: FullSimulation, score: Double): Unit = {
     traces :+= (name, simulation)
     scores :+= score
   }
 
+  def addTestScore(iteration: Int, score: Double): Unit = {
+    testScores :+= (iteration.toDouble, score)
+  }
+
+  def addTrainScore(iteration: Int, score: Double): Unit = {
+    trainingScores :+= (iteration.toDouble, score)
+  }
+
+  def initializeFrame(): Unit
+
+  def redisplayData(): Unit
+
+  def saveData(path: String): Unit = {
+    val data = Map[String, Serializable](
+      "worldBound" -> worldBound,
+        "traces" -> traces.toVector,
+        "scores" -> scores.toVector,
+        "trainingScores" -> trainingScores.toVector,
+        "testScores" -> testScores.toVector
+      ).toVector
+    FileInteraction.saveObjectToFile(path)(data)
+  }
+
+  def setData(dataMap: Map[String, Serializable]): Unit = {
+    traces = dataMap("traces").asInstanceOf[Vector[(String, FullSimulation)]]
+    scores = dataMap("scores").asInstanceOf[Vector[Double]]
+    trainingScores = dataMap("trainingScores").asInstanceOf[Vector[(Double, Double)]]
+    testScores = dataMap("testScores").asInstanceOf[Vector[(Double, Double)]]
+  }
+}
+
+class FakeVisualizer(worldBound: WorldBound,
+                    ) extends TraceRecorder(worldBound){
+  def initializeFrame(): Unit = ()
+
+  def redisplayData(): Unit = ()
+}
+
+object TraceVisualizer{
+  def recoverFromData(path: String): TraceVisualizer = {
+
+    val dataMap = FileInteraction.readObjectFromFile(path).asInstanceOf[Vector[(String, Serializable)]].toMap
+
+    new TraceVisualizer(dataMap("worldBound").asInstanceOf[WorldBound]){
+      setData(dataMap)
+    }
+  }
+}
+
+class TraceVisualizer(worldBound: WorldBound,
+                     ) extends TraceRecorder(worldBound) {
+
+
   val placeholder = GUI.panel(horizontal = false)()
-  var seeCurve = true
   val curveSwitcher = new JRadioButton("Curves"){
     setSelected(true)
     addActionListener(_ => {
@@ -130,13 +183,6 @@ class TraceVisualizer(worldBound: WorldBound,
     add(traceSwitcher)
   }
 
-  def addTestScore(iteration: Int, score: Double) = {
-    testScores :+= (iteration.toDouble, score)
-  }
-
-  def addTrainScore(iteration: Int, score: Double) = {
-    trainingScores :+= (iteration.toDouble, score)
-  }
 
   val dataButton = new JButton("Fetch data")
   val frame = new JFrame()

@@ -1,8 +1,10 @@
 package spaceY
 
 import java.awt.Dimension
+import java.io.File
 
 import javax.swing.JFrame
+import org.deeplearning4j.util.ModelSerializer
 import rx._
 import spaceY.DoubleQTraining.CheckPoint
 import spaceY.Geometry2D._
@@ -14,6 +16,8 @@ object Playground {
 
   val deltaT: Double = 1.0/25.0
   val world = World(gravity = Vec2.down*10, maxThrust = 30, deltaT = deltaT)
+
+  val useGUI = true
 
   def main(args: Array[String]): Unit = {
 
@@ -69,14 +73,22 @@ object Playground {
       sampleInitState = sampleInitState
     )
 
-    val visualizer = new TraceVisualizer(taskParams.worldBound)
     var trainingReward = 0.0
     val gamma = 1.0 / 50
+
+    import ammonite.ops._
+
+    val resultsDir = pwd / "results" / TimeTools.numericalDateTime()
+    val testCurveFile = (resultsDir / "testCurve.txt").toString()
+    val trainCurveFile = (resultsDir / "trainCurve.txt").toString()
+    val visualizerDataPath = (resultsDir / "visualizerData.serialized").toString()
+
+    val visualizer: TraceRecorder = if(useGUI) new TraceVisualizer(bound) else new FakeVisualizer(bound)
 
     def checkPointAction(checkPoint: CheckPoint): Unit = {
       import checkPoint._
 
-      val needInit = visualizer.traceNum == 0
+      val needInit = iteration == 0
 
 
       if (iteration % 50 == 0) {
@@ -89,28 +101,34 @@ object Playground {
         }
         val testReward = SimpleMath.mean(scores)
         visualizer.addTestScore(iteration, testReward)
+        FileInteraction.writeToFile(testCurveFile, append = true)(s"$iteration, $testReward")
         println(s"Test Avg Reward[iter=$iteration]: $testReward")
       }
       newSims.map(s => taskParams.rewardFunction.reward(s.ending)).foreach { r =>
         trainingReward = trainingReward * (1.0 - gamma) + gamma * r
       }
       visualizer.addTrainScore(iteration, trainingReward)
+      FileInteraction.writeToFile(trainCurveFile, append = true)(s"$iteration, $trainingReward")
       println(s"Exp Weighted Reward[iter=$iteration]: $trainingReward")
 
       if (needInit) {
-        visualizer.redisplayData()
         visualizer.initializeFrame()
       }
-      if(iteration % 1 == 0 && visualizer.seeCurve){
+      if(visualizer.seeCurve){
         visualizer.redisplayData()
       }
+      if(iteration % 2000 == 0){
+        println("Save model...")
+        val newNetFile = new File((resultsDir / s"newNet$iteration.deep4j").toString())
+        val oldNetFile = new File((resultsDir / s"oldNet$iteration.deep4j").toString())
+        ModelSerializer.writeModel(newNet, newNetFile, true)
+        ModelSerializer.writeModel(oldNet, oldNetFile, true)
+        visualizer.saveData(visualizerDataPath)
+      }
+
     }
 
 
-    //    NetworkModel.createModel()
-    import ammonite.ops._
-
-    val resultsDir = pwd / "results" / TimeTools.numericalDateTime()
     train.train(20000,
       exploreRateFunc = e => 0.05 / (5 + e.toDouble / 100), resultsDir, checkPointAction)
   }

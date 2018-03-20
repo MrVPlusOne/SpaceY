@@ -33,7 +33,8 @@ object Geometry2D {
 
   case class Line2(from: Vec2, to: Vec2)
 
-  class Rotation2 private(val angle: Double){
+  @SerialVersionUID(0)
+  class Rotation2 private(val angle: Double) extends Serializable {
     override def equals(obj: scala.Any): Boolean = obj match {
       case r: Rotation2 => angle == r.angle
     }
