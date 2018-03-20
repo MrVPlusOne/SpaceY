@@ -43,9 +43,12 @@ case class Visualization(worldBound: WorldBound, state: State, action: Action, i
     val h = worldBound.height
 
     def drawInfo() = {
+      val offset = vecTrans(Vec2(-worldBound.width/2, worldBound.height))
+      val dx = offset.x.toInt
+      val dy = offset.y.toInt
       g2D.setColor(Color.green.darker())
-      g2D.drawString(info.displayInfo, 30+borderThickness,20+borderThickness)
-      g2D.drawString(action.toString, 30+borderThickness, 40+borderThickness)
+      g2D.drawString(info.displayInfo, dx + 10 + borderThickness, dy + 20 + borderThickness)
+      g2D.drawString(action.toString, dx + 10 + borderThickness, dy + 40 + borderThickness)
     }
 
     def drawGoal() = {

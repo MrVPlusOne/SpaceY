@@ -16,7 +16,6 @@ object Playground {
   val world = World(gravity = Vec2.down*10, maxThrust = 30, deltaT = deltaT)
 
   def main(args: Array[String]): Unit = {
-//    BasicConfigurator.configure()
 
     val params = TrainingParams()
 
@@ -38,17 +37,18 @@ object Playground {
 
     def sampleInitState(random: Random): State = {
       def between(from: Double, to: Double) = SimpleMath.linearInterpolate(from, to)(random.nextDouble())
+
       State(
         pos = Vec2(between(-80, 80), between(50,125)),
         velocity = Vec2(between(-20,20), between(-20,20)),
-        rotation = Rotation2(SimpleMath.cubic(between(-1.0, 1.0))*math.Pi),
+        rotation = Rotation2(SimpleMath.cubic(between(-1.0, 1.0))),
         goalX = between(-20,80),
         fuelLeft = 10
       )
     }
 
     val taskParams = TaskParams(world, bound, availableActions, initStates,
-      hitSpeedTolerance = 30, rotationTolerance = 0.4 * math.Pi,
+      hitSpeedTolerance = 30, rotationTolerance = 0.4,
       rewardFunction = RewardFunction.LinearProduct(
         driftTolerance = bound.width/3,
         rotationTolerance = 1.0/2,
@@ -59,7 +59,8 @@ object Playground {
 
     def balanceThrustPolicy(state: State): (Action, PolicyInfo) = {
       val thrust = world.gravity.magnitude / world.maxThrust - 0.1
-      Action(rotationSpeed = 0.0, thrust) -> NoInfo
+      val rotSpeed = if(state.rotation.angle > 0) -1.0 else 1.0
+      Action(rotationSpeed = rotSpeed, thrust) -> NoInfo
     }
 
     val train = new DoubleQTraining(taskParams,
