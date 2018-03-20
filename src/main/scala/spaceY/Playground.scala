@@ -4,11 +4,13 @@ import java.awt.Dimension
 import java.io.File
 
 import javax.swing.JFrame
+import org.deeplearning4j.nn.conf.Updater
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.util.ModelSerializer
 import rx._
 import spaceY.DoubleQTraining.CheckPoint
 import spaceY.Geometry2D._
+import spaceY.NetworkModel.ModelParams
 import spaceY.Simulator.{FullSimulation, NoInfo, PolicyInfo, WorldBound}
 
 import scala.util.Random
@@ -21,8 +23,36 @@ object Playground {
   val useGUI = true
 
   def main(args: Array[String]): Unit = {
+    val tasks = (0 until 50)
+    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
+      i =>
+        val seed = i
+        val rand = new Random(seed)
+        (0 until 5).foreach(_ => rand.nextInt())
 
-    val params = TrainingParams()
+        def select[A](xs: A*): A = {
+          SimpleMath.randomSelect(rand)(xs.toIndexedSeq)
+        }
+
+        val params = TrainingParams(
+          modelParams = ModelParams(
+            sizes = NetworkModel.getModelSizes(layers = select(3,4,5), baseNeurons = select(64,128)),
+            updater = select(Updater.ADAM, Updater.NESTEROVS, Updater.SGD),
+            learningRate = SimpleMath.expInterpolate(0.0004, 0.008)(rand.nextDouble())
+          ),
+          batchSize = select(64,128),
+          batchesPerDataCollect = SimpleMath.expInterpolate(5, 50)(rand.nextDouble()).toInt,
+          seed = seed,
+          gamma = select(0.999,0.99,1.0),
+          replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000)(rand.nextDouble()).toInt,
+          updateDataNum = select(20,40,80, 160),
+          copyInterval = select(25,50,75,100,200)
+        )
+        train(params, ioId = i)
+    }
+  }
+
+  def train(params: TrainingParams, ioId: Int): Unit = {
 
     val bound = WorldBound(width = 200, height = 150)
     val availableActions: IS[Action] = {
@@ -79,7 +109,7 @@ object Playground {
 
     import ammonite.ops._
 
-    val resultsDir = pwd / "results" / TimeTools.numericalDateTime()
+    val resultsDir = pwd / "results" / (TimeTools.numericalDateTime() + s"[ioId=$ioId]")
     val testCurveFile = (resultsDir / "testCurve.txt").toString()
     val trainCurveFile = (resultsDir / "trainCurve.txt").toString()
     val visualizerDataPath = (resultsDir / "visualizerData.serialized").toString()
@@ -101,7 +131,7 @@ object Playground {
       val needInit = iteration == 0
 
 
-      if (iteration % 50 == 0) {
+      if (iteration % 200 == 0) {
         val policy = NetworkModel.networkToPolicy(newNet, availableActions, exploreRate = None) _
         val scores = initStates.zipWithIndex.map { case (initState, i) =>
           val sim = new Simulator(initState, world, terminateFunc).simulateUntilResult(policy)
@@ -133,7 +163,7 @@ object Playground {
     }
 
 
-    train.train(20000+1,
+    train.train(12000+1,
       exploreRateFunc = e => 0.05 / (5 + e.toDouble / 1000), resultsDir, checkPointAction)
     visualizer.close()
   }

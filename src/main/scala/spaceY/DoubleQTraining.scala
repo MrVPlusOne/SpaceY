@@ -37,6 +37,15 @@ object NetworkModel{
     def displayInfo = s"Random Exploration"
   }
 
+  def getModelSizes(layers: Int, baseNeurons: Int): IS[Int] = {
+    var neurons = baseNeurons
+    observationLen +: (0 until layers).map{_ =>
+      val b = neurons
+      neurons /= 2
+      b
+    }
+  }
+
   case class ModelParams(sizes: IS[Int] = IS(observationLen, 64, 32, 16),
                          updater: Updater = Updater.NESTEROVS,
                          learningRate: Double = 0.002){
