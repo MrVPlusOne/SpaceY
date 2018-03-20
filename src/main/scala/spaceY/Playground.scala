@@ -4,6 +4,7 @@ import java.awt.Dimension
 import java.io.File
 
 import javax.swing.JFrame
+import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.util.ModelSerializer
 import rx._
 import spaceY.DoubleQTraining.CheckPoint
@@ -85,6 +86,15 @@ object Playground {
 
     val visualizer: TraceRecorder = if(useGUI) new TraceVisualizer(bound) else new FakeVisualizer(bound)
 
+    def saveAllData(nameTag: String, oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork): Unit ={
+      println("Save model...")
+      val newNetFile = new File((resultsDir / s"newNet-$nameTag.deep4j").toString())
+      val oldNetFile = new File((resultsDir / s"oldNet-$nameTag.deep4j").toString())
+      ModelSerializer.writeModel(newNet, newNetFile, true)
+      ModelSerializer.writeModel(oldNet, oldNetFile, true)
+      visualizer.saveData(visualizerDataPath)
+    }
+
     def checkPointAction(checkPoint: CheckPoint): Unit = {
       import checkPoint._
 
@@ -118,19 +128,14 @@ object Playground {
         visualizer.redisplayData()
       }
       if(iteration % 2000 == 0){
-        println("Save model...")
-        val newNetFile = new File((resultsDir / s"newNet$iteration.deep4j").toString())
-        val oldNetFile = new File((resultsDir / s"oldNet$iteration.deep4j").toString())
-        ModelSerializer.writeModel(newNet, newNetFile, true)
-        ModelSerializer.writeModel(oldNet, oldNetFile, true)
-        visualizer.saveData(visualizerDataPath)
+        saveAllData(iteration.toString, oldNet, newNet)
       }
-
     }
 
 
-    train.train(20000,
-      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 100), resultsDir, checkPointAction)
+    train.train(20000+1,
+      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 1000), resultsDir, checkPointAction)
+    visualizer.close()
   }
 
   def testUI(args: Array[String]): Unit = {

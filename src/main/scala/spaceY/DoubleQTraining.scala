@@ -255,7 +255,6 @@ class DoubleQTraining(taskParams: TaskParams,
 
         checkPointAction(CheckPoint(iter, oldNet, newNet, newSims))
       }
-
     }
   }
 

@@ -121,6 +121,8 @@ abstract class TraceRecorder(worldBound: WorldBound,
 
   def initializeFrame(): Unit
 
+  def close(): Unit
+
   def redisplayData(): Unit
 
   def saveData(path: String): Unit = {
@@ -145,6 +147,8 @@ abstract class TraceRecorder(worldBound: WorldBound,
 class FakeVisualizer(worldBound: WorldBound,
                     ) extends TraceRecorder(worldBound){
   def initializeFrame(): Unit = ()
+
+  def close(): Unit = ()
 
   def redisplayData(): Unit = ()
 }
@@ -200,6 +204,11 @@ class TraceVisualizer(worldBound: WorldBound,
     frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
     frame.setVisible(true)
     redisplayData()
+  }
+
+  def close(): Unit = {
+    frame.setVisible(false)
+    frame.dispose()
   }
 
   def redisplayData(): Unit = {
