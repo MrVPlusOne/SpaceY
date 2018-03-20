@@ -20,7 +20,7 @@ object Playground {
   val deltaT: Double = 1.0/25.0
   val world = World(gravity = Vec2.down*10, maxThrust = 30, deltaT = deltaT)
 
-  val useGUI = true
+  val useGUI = false
 
   def main(args: Array[String]): Unit = {
     val tasks = (0 until 50)
@@ -38,7 +38,7 @@ object Playground {
           modelParams = ModelParams(
             sizes = NetworkModel.getModelSizes(layers = select(3,4,5), baseNeurons = select(64,128)),
             updater = select(Updater.ADAM, Updater.NESTEROVS, Updater.SGD),
-            learningRate = SimpleMath.expInterpolate(0.0004, 0.008)(rand.nextDouble())
+            learningRate = SimpleMath.expInterpolate(0.0005, 0.01)(rand.nextDouble())
           ),
           batchSize = select(64,128),
           batchesPerDataCollect = SimpleMath.expInterpolate(5, 50)(rand.nextDouble()).toInt,
