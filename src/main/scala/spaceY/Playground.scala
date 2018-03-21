@@ -20,12 +20,12 @@ object Playground {
   val deltaT: Double = 1.0/25.0
   val world = World(gravity = Vec2.down*10, maxThrust = 30, deltaT = deltaT)
 
-  val useGUI = false
+  val useGUI = true
 
   def main(args: Array[String]): Unit = {
     val tasks = (0 until 50)
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMapOrdered(tasks, threadNum = 10){
+    SimpleMath.parallelMap(tasks, threadNum = 4){
       i =>
         val seed = i
         val rand = new Random(seed)
@@ -37,8 +37,8 @@ object Playground {
 
         val params = TrainingParams(
           modelParams = ModelParams(
-            sizes = NetworkModel.getModelSizes(layers = select(3,4,5), baseNeurons = select(64,128)),
-            updater = select(Updater.ADAM, Updater.NESTEROVS, Updater.SGD),
+            sizes = NetworkModel.getModelSizes(layers = select(3,4), baseNeurons = select(64,128)),
+            updater = select(Updater.ADAM, Updater.NESTEROVS),
             learningRate = SimpleMath.expInterpolate(0.0005, 0.01)(rand.nextDouble())
           ),
           batchSize = select(64,128),
@@ -46,8 +46,8 @@ object Playground {
           seed = seed,
           gamma = select(0.999,0.99,1.0),
           replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000)(rand.nextDouble()).toInt,
-          updateDataNum = select(20,40,80, 160),
-          copyInterval = select(25,50,75,100,200)
+          updateDataNum = select(20 to 80 :_*),
+          copyInterval = select(25 to 100 :_*)
         )
         train(params, ioId = i)
     }
@@ -83,12 +83,13 @@ object Playground {
       )
     }
 
+    val speedTolerance = math.sqrt(2.0 * world.gravity.magnitude * bound.height) / 2
     val taskParams = TaskParams(world, bound, availableActions, initStates,
-      hitSpeedTolerance = 30, rotationTolerance = 0.4,
+      hitSpeedTolerance = speedTolerance, rotationTolerance = 0.4,
       rewardFunction = RewardFunction.LinearProduct(
         driftTolerance = bound.width / 3,
         rotationTolerance = 1.0 / 2,
-        speedTolerance = math.sqrt(2.0 * world.gravity.magnitude * bound.height) / 2))
+        speedTolerance = speedTolerance / 2))
 
     val terminateFunc = Simulator.standardTerminateFunc(taskParams.worldBound,
       taskParams.hitSpeedTolerance, taskParams.rotationTolerance) _
@@ -115,7 +116,7 @@ object Playground {
     val trainCurveFile = (resultsDir / "trainCurve.txt").toString()
     val visualizerDataPath = (resultsDir / "visualizerData.serialized").toString()
 
-    val visualizer: TraceRecorder = if(useGUI) new TraceVisualizer(bound) else new FakeVisualizer(bound)
+    val visualizer: TraceRecorder = if(useGUI) new TraceVisualizer(s"ioId=$ioId", bound) else new FakeVisualizer(bound)
 
     def saveAllData(nameTag: String, oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork): Unit ={
       println("Save model...")
@@ -142,14 +143,14 @@ object Playground {
         }
         val testReward = SimpleMath.mean(scores)
         visualizer.addTestScore(iteration, testReward)
-        FileInteraction.writeToFile(testCurveFile, append = true)(s"$iteration, $testReward")
+        FileInteraction.writeToFile(testCurveFile, append = true)(s"$iteration, $testReward\n")
         println(s"Test Avg Reward[iter=$iteration]: $testReward")
       }
       newSims.map(s => taskParams.rewardFunction.reward(s.ending)).foreach { r =>
         trainingReward = trainingReward * (1.0 - gamma) + gamma * r
       }
       visualizer.addTrainScore(iteration, trainingReward)
-      FileInteraction.writeToFile(trainCurveFile, append = true)(s"$iteration, $trainingReward")
+      FileInteraction.writeToFile(trainCurveFile, append = true)(s"$iteration, $trainingReward\n")
       println(s"Exp Weighted Reward[iter=$iteration]: $trainingReward")
 
       if (needInit) {
@@ -163,10 +164,14 @@ object Playground {
       }
     }
 
+    def shouldContinue(): Boolean = {
+      visualizer.shouldContinue
+    }
 
     train.train(12000+1,
-      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 1000), resultsDir, checkPointAction)
+      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 1000), resultsDir, checkPointAction, shouldContinue)
     visualizer.close()
+    println(s"task $ioId finished")
   }
 
   def testUI(args: Array[String]): Unit = {

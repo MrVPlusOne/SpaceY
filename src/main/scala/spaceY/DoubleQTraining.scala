@@ -213,7 +213,8 @@ class DoubleQTraining(taskParams: TaskParams,
   }
 
   def train(maxIter: Int, exploreRateFunc: Int => Double, resultsDir: Path,
-            checkPointAction: CheckPoint => Unit) = {
+            checkPointAction: CheckPoint => Unit,
+            shouldContinue: () => Boolean): Unit = {
 
     FileInteraction.runWithAFileLogger(resultsDir / "log.txt") { logger =>
       import logger._
@@ -236,6 +237,8 @@ class DoubleQTraining(taskParams: TaskParams,
 
 
       for (iter <- 0 until maxIter) {
+        if(!shouldContinue())
+          return
         val timePassed = java.time.Duration.ofNanos(System.nanoTime() - start).getSeconds
         System.out.println(s"Iteration $iter starts [$timePassed s]")
 
@@ -255,12 +258,12 @@ class DoubleQTraining(taskParams: TaskParams,
           System.out.print(".")
         }
         System.out.println("")
-//        if (iter % copyInterval == 0) {
-//          oldNet.setParams(newNet.params())
-//        }
-        val netReplaceRate: Double = 1.00 / copyInterval
-        val newNetParams = oldNet.params().mul(1.0 - netReplaceRate).add(newNet.params().mul(netReplaceRate))
-        oldNet.setParams(newNetParams)
+        if (iter % copyInterval == 0) {
+          oldNet.setParams(newNet.params())
+        }
+//        val netReplaceRate: Double = 1.00 / copyInterval
+//        val newNetParams = oldNet.params().mul(1.0 - netReplaceRate).add(newNet.params().mul(netReplaceRate))
+//        oldNet.setParams(newNetParams)
 
         checkPointAction(CheckPoint(iter, oldNet, newNet, newSims))
       }

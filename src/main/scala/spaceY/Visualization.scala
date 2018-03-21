@@ -1,6 +1,7 @@
 package spaceY
 
 import java.awt._
+import java.awt.event.{WindowAdapter, WindowEvent}
 import java.awt.geom.{GeneralPath, Line2D}
 
 import ammonite.ops.Path
@@ -125,6 +126,8 @@ abstract class TraceRecorder(worldBound: WorldBound,
 
   def redisplayData(): Unit
 
+  def shouldContinue: Boolean
+
   def saveData(path: String): Unit = {
     val data = Map[String, Serializable](
       "worldBound" -> worldBound,
@@ -151,6 +154,8 @@ class FakeVisualizer(worldBound: WorldBound,
   def close(): Unit = ()
 
   def redisplayData(): Unit = ()
+
+  def shouldContinue: Boolean = true
 }
 
 object TraceVisualizer{
@@ -158,15 +163,19 @@ object TraceVisualizer{
 
     val dataMap = FileInteraction.readObjectFromFile(path).asInstanceOf[Vector[(String, Serializable)]].toMap
 
-    new TraceVisualizer(dataMap("worldBound").asInstanceOf[WorldBound]){
+    new TraceVisualizer(
+      dataMap("name").asInstanceOf[String],
+      dataMap("worldBound").asInstanceOf[WorldBound]){
       setData(dataMap)
     }
   }
 }
 
-class TraceVisualizer(worldBound: WorldBound,
+class TraceVisualizer(name: String,
+                      worldBound: WorldBound,
                      ) extends TraceRecorder(worldBound) {
 
+  var shouldContinue = true
 
   val placeholder = GUI.panel(horizontal = false)()
   val curveSwitcher = new JRadioButton("Curves"){
@@ -201,12 +210,18 @@ class TraceVisualizer(worldBound: WorldBound,
 
   def initializeFrame(): Unit = {
     require(traces.nonEmpty)
-    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
     frame.setVisible(true)
     redisplayData()
+
+    frame.addWindowListener(new WindowAdapter {
+      override def windowClosing(e: WindowEvent): Unit = {
+        close()
+      }
+    })
   }
 
   def close(): Unit = {
+    shouldContinue = false
     frame.setVisible(false)
     frame.dispose()
   }
@@ -220,7 +235,7 @@ class TraceVisualizer(worldBound: WorldBound,
     val panelToShow = if(seeCurve){
       val newChart = if(testScores.nonEmpty){
         Some(ListPlot.plot("Test Score" -> testScores, "Train Score" -> trainingScores)(
-          plotName = "Score Curves",
+          plotName = s"Score Curves [$name]",
           xLabel = "Iteration",
           yLabel = "Score"
         ))
