@@ -25,7 +25,7 @@ object Playground {
   def main(args: Array[String]): Unit = {
     val tasks = (0 until 50)
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMap(tasks, threadNum = 4){
+    SimpleMath.parallelMap(tasks, threadNum = 8){
       i =>
         val seed = i
         val rand = new Random(seed)
