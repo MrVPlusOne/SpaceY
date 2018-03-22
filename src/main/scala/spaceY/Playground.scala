@@ -3,7 +3,7 @@ package spaceY
 import java.awt.Dimension
 import java.io.File
 
-import javax.swing.JFrame
+import javax.swing.{JFrame, WindowConstants}
 import org.deeplearning4j.nn.conf.Updater
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.util.ModelSerializer
@@ -25,7 +25,7 @@ object Playground {
   def main(args: Array[String]): Unit = {
     val tasks = (0 until 50)
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMap(tasks, threadNum = 8){
+    SimpleMath.parallelMap(tasks, threadNum = 3){
       i =>
         val seed = i
         val rand = new Random(seed)
@@ -201,7 +201,7 @@ object Playground {
 
       val frame = new JFrame()
       frame.setContentPane(scPanel.jPanel)
-      frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+      frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
       frame.pack()
       frame.setVisible(true)
     }

@@ -375,7 +375,7 @@ object TestVisual{
 
       val frame = new JFrame()
       frame.setContentPane(statePanel.jPanel)
-      frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+      frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
       frame.pack()
       frame.setVisible(true)
     }

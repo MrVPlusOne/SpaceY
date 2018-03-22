@@ -14,7 +14,7 @@ import org.jfree.data.xy.{XYSeries, XYSeriesCollection}
 object MonitorPanel{
   def main(args: Array[String]): Unit = {
     val frame = new JFrame("Monitor") {
-      setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
+      setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
 
       setVisible(true)
     }
