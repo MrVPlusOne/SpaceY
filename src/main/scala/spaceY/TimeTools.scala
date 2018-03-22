@@ -82,7 +82,7 @@ object TimeTools {
     f(timer)
   }
 
-  val numericalDateTimeFormat = new SimpleDateFormat("yy-MM-dd-HH:mm:ss")
+  val numericalDateTimeFormat = new SimpleDateFormat("yy-MM-dd-HH.mm.ss")
 
   def numericalDateTime(): String = {
     import java.util.Calendar
