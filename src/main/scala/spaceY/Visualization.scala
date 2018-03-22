@@ -282,7 +282,7 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
   }
 
   private val repaintObs = visual.trigger{
-    jPanel.repaint()
+    jPanel.repaint(1L)
   }
 
   def stopTracking(): Unit = repaintObs.kill()
