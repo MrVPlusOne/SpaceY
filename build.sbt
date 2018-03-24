@@ -14,14 +14,16 @@ classpathTypes += "maven-plugin"
 
 libraryDependencies ++= Seq(
   "org.jfree" % "jfreechart" % "1.0.14",
-  "org.nd4j" % "nd4j-native-platform" % "0.9.1",
+//  "org.nd4j" % "nd4j-native-platform" % "0.9.1",
+  "org.nd4j" % "nd4j-cuda-9.1" % "0.9.2-SNAPSHOT",
   "org.slf4j" % "slf4j-api" % "1.7.5",
   "org.slf4j" % "slf4j-log4j12" % "1.7.5",
   "com.typesafe.akka" %% "akka-actor" % "2.5.6",
-  "com.typesafe.akka" %% "akka-testkit" % "2.5.6" % Test
+  "com.typesafe.akka" %% "akka-testkit" % "2.5.6" % Test,
+
+  "com.lihaoyi" %% "ammonite-ops" % "1.0.3"
 )
 
-libraryDependencies += "com.lihaoyi" %% "ammonite-ops" % "1.0.3"
 
 //libraryDependencies += "org.platanios" %% "tensorflow" % "0.1.1" classifier "darwin-cpu-x86_64"
 //libraryDependencies += "org.platanios" %% "tensorflow" % "0.1.1"
