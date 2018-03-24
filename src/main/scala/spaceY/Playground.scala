@@ -7,6 +7,7 @@ import javax.swing.{JFrame, WindowConstants}
 import org.deeplearning4j.nn.conf.Updater
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.util.ModelSerializer
+import org.nd4j.linalg.activations.Activation
 import rx._
 import spaceY.DoubleQTraining.CheckPoint
 import spaceY.Geometry2D._
@@ -23,33 +24,37 @@ object Playground {
   val useGUI = true
 
   def main(args: Array[String]): Unit = {
-    val tasks = (0 until 50)
+    val tasks = (20 until 50).map{ i =>
+      val seed = i
+      val rand = new Random(seed)
+      (0 until 5).foreach(_ => rand.nextInt())
+
+      def select[A](xs: A*): A = {
+        SimpleMath.randomSelect(rand)(xs.toIndexedSeq)
+      }
+
+      val params = TrainingParams(
+        modelParams = ModelParams(
+          outLayerActivation = select(Activation.RELU, Activation.SIGMOID),
+          sizes = NetworkModel.getModelSizes(layers = select(3,4,5), baseNeurons = select(64,128)),
+          updater = select(Updater.ADAM, Updater.NESTEROVS),
+          learningRate = SimpleMath.expInterpolate(0.0005, 0.01,10)(rand.nextDouble())
+        ),
+        batchSize = select(64,128),
+        batchesPerDataCollect = SimpleMath.expInterpolate(5, 50,10)(rand.nextDouble()).toInt,
+        seed = seed,
+        gamma = select(0.999,0.99,1.0),
+        replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000, 10)(rand.nextDouble()).toInt,
+        updateDataNum = select(10 to 80 :_*),
+        copyInterval = select(25 to 100 :_*)
+      )
+
+      i -> params
+    }
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
     SimpleMath.parallelMap(tasks, threadNum = 4){
-      i =>
-        val seed = i
-        val rand = new Random(seed)
-        (0 until 5).foreach(_ => rand.nextInt())
-
-        def select[A](xs: A*): A = {
-          SimpleMath.randomSelect(rand)(xs.toIndexedSeq)
-        }
-
-        val params = TrainingParams(
-          modelParams = ModelParams(
-            sizes = NetworkModel.getModelSizes(layers = select(3,4), baseNeurons = select(64,128)),
-            updater = select(Updater.ADAM, Updater.NESTEROVS),
-            learningRate = SimpleMath.expInterpolate(0.0005, 0.01)(rand.nextDouble())
-          ),
-          batchSize = select(64,128),
-          batchesPerDataCollect = SimpleMath.expInterpolate(5, 50)(rand.nextDouble()).toInt,
-          seed = seed,
-          gamma = select(0.999,0.99,1.0),
-          replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000)(rand.nextDouble()).toInt,
-          updateDataNum = select(20 to 80 :_*),
-          copyInterval = select(25 to 100 :_*)
-        )
-        train(params, ioId = i)
+      case (id, params) =>
+        train(params, ioId = id)
     }
   }
 
@@ -85,11 +90,11 @@ object Playground {
 
     val speedTolerance = math.sqrt(2.0 * world.gravity.magnitude * bound.height) / 2
     val taskParams = TaskParams(world, bound, availableActions, initStates,
-      hitSpeedTolerance = speedTolerance, rotationTolerance = 0.4,
+      hitSpeedTolerance = speedTolerance, rotationTolerance = 0.40,
       rewardFunction = RewardFunction.LinearProduct(
         driftTolerance = bound.width / 3,
         rotationTolerance = 1.0 / 2,
-        speedTolerance = speedTolerance / 2))
+        speedTolerance = speedTolerance))
 
     val terminateFunc = Simulator.standardTerminateFunc(taskParams.worldBound,
       taskParams.hitSpeedTolerance, taskParams.rotationTolerance) _
@@ -107,7 +112,7 @@ object Playground {
     )
 
     var trainingReward = 0.0
-    val gamma = 1.0 / 50
+    val trainingRewardDelay = 1.0 / 20
 
     import ammonite.ops._
 
@@ -117,6 +122,7 @@ object Playground {
     val visualizerDataPath = (resultsDir / "visualizerData.serialized").toString()
 
     val visualizer: TraceRecorder = if(useGUI) new TraceVisualizer(s"ioId=$ioId", bound) else new FakeVisualizer(bound)
+    var highestTestScore = 0.0
 
     def saveAllData(nameTag: String, oldNet: MultiLayerNetwork, newNet: MultiLayerNetwork): Unit ={
       println("Save model...")
@@ -124,6 +130,7 @@ object Playground {
       val oldNetFile = new File((resultsDir / s"oldNet-$nameTag.deep4j").toString())
       ModelSerializer.writeModel(newNet, newNetFile, true)
       ModelSerializer.writeModel(oldNet, oldNetFile, true)
+      FileInteraction.writeToFile((resultsDir/ "highest-score.txt").toString())(highestTestScore.toString)
       visualizer.saveData(visualizerDataPath)
     }
 
@@ -142,12 +149,13 @@ object Playground {
           r
         }
         val testReward = SimpleMath.mean(scores)
+        highestTestScore = math.max(highestTestScore, testReward)
         visualizer.addTestScore(iteration, testReward)
         FileInteraction.writeToFile(testCurveFile, append = true)(s"$iteration, $testReward\n")
         println(s"Test Avg Reward[iter=$iteration]: $testReward")
       }
       newSims.map(s => taskParams.rewardFunction.reward(s.ending)).foreach { r =>
-        trainingReward = trainingReward * (1.0 - gamma) + gamma * r
+        trainingReward = trainingReward * (1.0 - trainingRewardDelay) + trainingRewardDelay * r
       }
       visualizer.addTrainScore(iteration, trainingReward)
       FileInteraction.writeToFile(trainCurveFile, append = true)(s"$iteration, $trainingReward\n")
@@ -168,8 +176,8 @@ object Playground {
       visualizer.shouldContinue
     }
 
-    train.train(12000+1,
-      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 1000), resultsDir, checkPointAction, shouldContinue)
+    train.train(20000+1,
+      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 2000), resultsDir, checkPointAction, shouldContinue)
     visualizer.close()
     println(s"task $ioId finished")
   }

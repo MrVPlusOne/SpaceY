@@ -49,6 +49,7 @@ class MonitorPanel(var chart: Option[JFreeChart], margin: Double, plotSize: (Int
   setPreferredSize(new Dimension(plotSize._1, plotSize._2))
 
   override def paintComponent(g: Graphics) = {
+    super.paintComponent(g)
     val g2d = g.asInstanceOf[Graphics2D]
     chart.foreach(_.draw(g2d, new Rectangle2D.Double(margin, margin, getWidth-2*margin, getHeight-2*margin)))
   }

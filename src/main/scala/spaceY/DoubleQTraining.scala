@@ -46,11 +46,13 @@ object NetworkModel{
     }
   }
 
-  case class ModelParams(sizes: IS[Int] = IS(observationLen, 64, 32, 16),
+  case class ModelParams(outLayerActivation: Activation = Activation.RELU,
+                         sizes: IS[Int] = IS(observationLen, 64, 32, 16),
                          updater: Updater = Updater.NESTEROVS,
                          learningRate: Double = 0.002){
     def show: String = {
       s"""
+         |lastActivation: ${outLayerActivation.name()}
          |sizes: ${sizes.mkString("[",", ","]")}
          |updater: ${updater.name()}
          |learningRate: $learningRate
@@ -83,7 +85,7 @@ object NetworkModel{
 
     val c1 = config.layer(sizes.length-1, new OutputLayer.Builder(LossFunctions.LossFunction.MSE)
       .nIn(sizes.last).nOut(1)
-      .activation(Activation.RELU).build())
+      .activation(outLayerActivation).build())
       .pretrain(false).backprop(true)
       .build()
 

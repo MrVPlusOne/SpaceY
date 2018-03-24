@@ -164,7 +164,7 @@ object TraceVisualizer{
     val dataMap = FileInteraction.readObjectFromFile(path).asInstanceOf[Vector[(String, Serializable)]].toMap
 
     new TraceVisualizer(
-      dataMap("name").asInstanceOf[String],
+      dataMap.getOrElse("name", "untitled").asInstanceOf[String],
       dataMap("worldBound").asInstanceOf[WorldBound]){
       setData(dataMap)
     }
@@ -273,7 +273,8 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
   val margin = 10
 
   val jPanel: JPanel = new JPanel(){
-    override def paintComponent(g: Graphics): Unit = {
+    override def paint(g: Graphics): Unit = {
+      super.paint(g)
       val g2D = g.asInstanceOf[Graphics2D]
       g2D.translate(margin, margin)
       g2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
@@ -282,7 +283,7 @@ class StatePanel(visual: Var[Visualization])(implicit ctx: Ctx.Owner){
   }
 
   private val repaintObs = visual.trigger{
-    jPanel.repaint(1L)
+    jPanel.repaint()
   }
 
   def stopTracking(): Unit = repaintObs.kill()
