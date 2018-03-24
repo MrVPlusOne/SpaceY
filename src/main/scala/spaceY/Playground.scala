@@ -177,7 +177,7 @@ object Playground {
     }
 
     train.train(20000+1,
-      exploreRateFunc = e => 0.05 / (5 + e.toDouble / 2000), resultsDir, checkPointAction, shouldContinue)
+      exploreRateFunc = e => 0.05 / (5.0 + e.toDouble / 4000), resultsDir, checkPointAction, shouldContinue)
     visualizer.close()
     println(s"task $ioId finished")
   }
