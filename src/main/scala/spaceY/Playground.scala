@@ -47,14 +47,14 @@ object Playground {
         replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000, 10)(rand.nextDouble()).toInt,
         updateDataNum = select(10 to 80 :_*),
         copyInterval = select(25 to 100 :_*),
-        exploreAmount = SimpleMath.expInterpolate(0.005,0.05,10)(rand.nextDouble()),
-        exploreDecay = SimpleMath.expInterpolate(5000,50000,10)(rand.nextDouble())
+//        exploreAmount = SimpleMath.expInterpolate(0.005,0.05,10)(rand.nextDouble()),
+//        exploreDecay = SimpleMath.expInterpolate(5000,50000,10)(rand.nextDouble())
       )
 
       i -> params
     }
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMap(tasks, threadNum = 2){
+    SimpleMath.parallelMap(tasks, threadNum = 1){
       case (id, params) =>
         train(params, ioId = id)
     }
