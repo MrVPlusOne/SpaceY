@@ -144,6 +144,8 @@ case class TrainingParams(modelParams: ModelParams = ModelParams(),
        |updateDataNum: $updateDataNum
        |copyInterval: $copyInterval
        |threadNum: $threadNum
+       |exploreAmount: $exploreAmount
+       |exploreDecay: $exploreDecay
      """.stripMargin
   }
 }

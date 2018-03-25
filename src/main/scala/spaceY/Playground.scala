@@ -54,7 +54,7 @@ object Playground {
       i -> params
     }
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMap(tasks, threadNum = 1){
+    SimpleMath.parallelMap(tasks, threadNum = 2){
       case (id, params) =>
         train(params, ioId = id)
     }
@@ -97,8 +97,7 @@ object Playground {
         driftTolerance = bound.width / 3,
         rotationTolerance = 1.0 / 2,
         speedTolerance = speedTolerance,
-        totalTime = 10.0,
-        timeDecay = 0.9))
+        totalTime = 10.0))
 
     val terminateFunc = Simulator.standardTerminateFunc(taskParams.worldBound,
       taskParams.hitSpeedTolerance, taskParams.rotationTolerance) _
