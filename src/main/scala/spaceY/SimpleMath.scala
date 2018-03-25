@@ -83,7 +83,7 @@ object SimpleMath {
   def expInterpolate(from: Double, to: Double, base: Double)(x: Double): Double = {
     val ratio = to/from
     val l = math.log(ratio) / math.log(base)
-    from * math.pow(l, linearInterpolate(0, l)(x))
+    from * math.pow(base, linearInterpolate(0, l)(x))
   }
 
   def sigmoid(x: Double) = 1.0/(1+math.exp(-x))
