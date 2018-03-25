@@ -130,7 +130,9 @@ case class TrainingParams(modelParams: ModelParams = ModelParams(),
                           replayBufferSize: Int = 50*100*10,
                           updateDataNum: Int = 50,
                           copyInterval: Int = 100,
-                          threadNum: Int = 1){
+                          threadNum: Int = 1,
+                          exploreAmount: Double = 0.01,
+                          exploreDecay: Double = 20000.0){
   def show: String = {
     s"""
        |modelParams: ${modelParams.show}

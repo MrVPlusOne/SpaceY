@@ -24,7 +24,7 @@ object Playground {
   val useGUI = true
 
   def main(args: Array[String]): Unit = {
-    val tasks = (20 until 50).map{ i =>
+    val tasks = (50 until 70).map{ i =>
       val seed = i
       val rand = new Random(seed)
       (0 until 5).foreach(_ => rand.nextInt())
@@ -46,7 +46,9 @@ object Playground {
         gamma = select(0.999,0.99,1.0),
         replayBufferSize = SimpleMath.expInterpolate(50*100, 50*1000, 10)(rand.nextDouble()).toInt,
         updateDataNum = select(10 to 80 :_*),
-        copyInterval = select(25 to 100 :_*)
+        copyInterval = select(25 to 100 :_*),
+        exploreAmount = SimpleMath.expInterpolate(0.005,0.05,10)(rand.nextDouble()),
+        exploreDecay = SimpleMath.expInterpolate(5000,50000,10)(rand.nextDouble())
       )
 
       i -> params
@@ -94,7 +96,9 @@ object Playground {
       rewardFunction = RewardFunction.LinearProduct(
         driftTolerance = bound.width / 3,
         rotationTolerance = 1.0 / 2,
-        speedTolerance = speedTolerance))
+        speedTolerance = speedTolerance,
+        totalTime = 10.0,
+        timeDecay = 0.9))
 
     val terminateFunc = Simulator.standardTerminateFunc(taskParams.worldBound,
       taskParams.hitSpeedTolerance, taskParams.rotationTolerance) _
@@ -177,7 +181,7 @@ object Playground {
     }
 
     train.train(20000+1,
-      exploreRateFunc = e => 0.05 / (5.0 + e.toDouble / 4000), resultsDir, checkPointAction, shouldContinue)
+      exploreRateFunc = e => params.exploreAmount / (1.0 + e.toDouble / params.exploreDecay), resultsDir, checkPointAction, shouldContinue)
     visualizer.close()
     println(s"task $ioId finished")
   }

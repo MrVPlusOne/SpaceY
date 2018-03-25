@@ -3,7 +3,9 @@ package spaceY
 import spaceY.Geometry2D.{Vec2, Rotation2}
 import spaceY.Simulator.{FullSimulation, PolicyInfo, RPolicy, WorldBound}
 
-
+/**
+  * @param fuelLeft Time left! Will change this name in the future
+  */
 case class State(pos: Vec2, velocity: Vec2, rotation: Rotation2, goalX: Double, fuelLeft: Double) {
 
   override def toString: String = {
@@ -24,7 +26,7 @@ case class World(gravity: Vec2, maxThrust: Double, deltaT: Double){
     val newVelocity = state.velocity + gravity * deltaT +
       (Vec2.up * maxThrust * action.thrust).rotate(state.rotation) * deltaT
     val newRotation = state.rotation.rotate(action.rotationSpeed * deltaT)
-    val newState = State(newPos, newVelocity, newRotation, state.goalX, state.fuelLeft - deltaT * action.thrust)
+    val newState = State(newPos, newVelocity, newRotation, state.goalX, state.fuelLeft - deltaT)
 
     newState
   }
