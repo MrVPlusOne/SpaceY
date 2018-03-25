@@ -11,7 +11,7 @@ object RewardFunction {
         import state._
         import SimpleMath.relu
         import Math.abs
-        relu(1.0 - 0.5 * abs(pos.x - goalX)/driftTolerance) * relu(1.0 - 0.5 * rotation.abs/rotationTolerance) * relu(1.0 - 0.5 * velocity.magnitude/speedTolerance)
+        (1.0 + relu(1.0 - abs(pos.x - goalX)/driftTolerance)) *  (1.0 + relu(1.0 - rotation.abs/rotationTolerance)) * (1.0 + relu(1.0 - velocity.magnitude/speedTolerance)) / 8.0
       case _: Crashed => 0
     }
   }
