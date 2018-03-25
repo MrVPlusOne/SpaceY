@@ -24,7 +24,7 @@ object Playground {
   val useGUI = true
 
   def main(args: Array[String]): Unit = {
-    val tasks = (50 until 70).map{ i =>
+    val tasks = (27 until 40).map{ i =>
       val seed = i
       val rand = new Random(seed)
       (0 until 5).foreach(_ => rand.nextInt())
@@ -54,7 +54,7 @@ object Playground {
       i -> params
     }
 //    SimpleMath.processMap(args, tasks, processNum = 10, mainClass = this){
-    SimpleMath.parallelMap(tasks, threadNum = 4){
+    SimpleMath.parallelMap(tasks, threadNum = 2){
       case (id, params) =>
         train(params, ioId = id)
     }
