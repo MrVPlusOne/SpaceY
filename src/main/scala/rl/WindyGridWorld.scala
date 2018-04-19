@@ -26,9 +26,9 @@ object WindyGridWorld{
     val sarsa = new Sarsa(problem, exploreRate = t => 0.1 / (1 + t / 1000.0), learningRate = t => 0.5 , rand)
     val qMap: sarsa.QMap = mutable.HashMap()
     for(s <- problem.allNonTermStates; a <- problem.availableActions(s)){
-      qMap(s -> a) = 0.0
+      qMap(problem.getFeature(s) -> a) = 0.0
     }
-    val traces = sarsa.runExpectedSarsa(qMap, startTime = 0).take(2000).toIndexedSeq
+    val traces = sarsa.runSarsa(qMap, startTime = 0).take(2000).toIndexedSeq
 
     var timeStep, episode = 0
     var points: IS[(Double, Double)] = IS()
@@ -49,7 +49,7 @@ object WindyGridWorld{
 }
 
 case class WindyGridWorld(width: Int, height: Int,
-                          windStrength: IS[Int], initPos: VecI2, goal: VecI2) extends DynamicRLProblem[VecI2, VecI2]{
+                          windStrength: IS[Int], initPos: VecI2, goal: VecI2) extends DynamicRLProblem[VecI2, Int, VecI2]{
   def restrict(v: VecI2): VecI2 = {
     val x = if(v.x<0) 0 else if(v.x>=width) width-1 else v.x
     val y = if(v.y<0) 0 else if(v.y>=height) height-1 else v.y
@@ -74,5 +74,9 @@ case class WindyGridWorld(width: Int, height: Int,
   def availableActions(s: VecI2): IS[VecI2] = IS(VecI2(-1,0), VecI2(1,0), VecI2(0,1), VecI2(0,-1))
 
   def sampleInitState(random: Random): VecI2 = initPos
+
+  def getFeature(s: VecI2): Int = {
+    s.x + s.y * width
+  }
 }
 
